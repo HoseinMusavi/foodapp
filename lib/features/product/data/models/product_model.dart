@@ -10,11 +10,19 @@ class ProductModel extends ProductEntity {
     required super.price,
     required super.discountPrice,
     required super.imageUrl,
-    required super.category,
     required super.isAvailable,
+    super.categoryId,
+    super.categoryName,
   });
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
+    // این بخش برای زمانی است که جدول product_categories را JOIN می‌کنیم
+    String? catName;
+    if (json['product_categories'] != null &&
+        json['product_categories'] is Map) {
+      catName = json['product_categories']['name'] as String?;
+    }
+
     return ProductModel(
       id: json['id'] as int,
       storeId: json['store_id'] as int,
@@ -23,7 +31,8 @@ class ProductModel extends ProductEntity {
       price: (json['price'] as num).toDouble(),
       discountPrice: (json['discount_price'] as num?)?.toDouble(),
       imageUrl: json['image_url'] as String? ?? '',
-      category: json['category'] as String? ?? 'عمومی',
+      categoryId: json['category_id'] as int?, // <-- تغییر
+      categoryName: catName, // <-- جدید: از JOIN خوانده می‌شود
       isAvailable: json['is_available'] as bool? ?? true,
     );
   }

@@ -3,22 +3,22 @@
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failure.dart';
+import '../../../../core/utils/lat_lng.dart'; // <-- ایمپورت
 import '../../domain/entities/store_entity.dart';
 import '../../domain/repositories/store_repository.dart';
-import '../datasources/store_remote_datasource.dart'; // ‼️ CHANGE IMPORT
+import '../datasources/store_remote_datasource.dart';
 
 class StoreRepositoryImpl implements StoreRepository {
-  // --- ‼️ CHANGE: Use the real remote data source ---
   final StoreRemoteDataSource remoteDataSource;
 
-  // --- ‼️ CHANGE: Update the constructor ---
   StoreRepositoryImpl({required this.remoteDataSource});
 
   @override
-  Future<Either<Failure, List<StoreEntity>>> getStores() async {
+  Future<Either<Failure, List<StoreEntity>>> getStores(
+      LatLng location, double? radius) async {
     try {
-      // --- ‼️ CHANGE: Call the method from the real data source ---
-      final stores = await remoteDataSource.getAllStores();
+      // پارامترها را به دیتاسورس پاس می‌دهیم
+      final stores = await remoteDataSource.getStoresNearMe(location, radius);
       return Right(stores);
     } on ServerException catch (e) {
       return Left(ServerFailure(message: e.message));

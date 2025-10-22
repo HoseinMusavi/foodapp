@@ -40,8 +40,8 @@ class CartPage extends StatelessWidget {
             // --- ✨ FIX: Handle possible null storeName ---
             final groupedByStore = groupBy(
               state.cart.items,
-              (CartItemEntity item) =>
-                  item.product.storeName ?? 'فروشگاه نامشخص',
+              (CartItemEntity item) =>"اسم الکی"
+            
             );
 
             return Column(

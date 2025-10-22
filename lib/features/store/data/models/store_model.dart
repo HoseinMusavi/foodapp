@@ -1,5 +1,5 @@
 // lib/features/store/data/models/store_model.dart
-
+import '../../../../core/utils/lat_lng.dart'; // <-- ایمپورت کلاس جدید
 import '../../domain/entities/store_entity.dart';
 
 class StoreModel extends StoreEntity {
@@ -13,34 +13,43 @@ class StoreModel extends StoreEntity {
     required super.ratingCount,
     required super.cuisineType,
     required super.deliveryTimeEstimate,
+    super.location,
   });
 
   factory StoreModel.fromJson(Map<String, dynamic> json) {
+    // از همان تابع کمکی پارس کردن موقعیت استفاده می‌کنیم
+    LatLng? parseLocation(dynamic loc) {
+      if (loc == null) return null;
+      try {
+        if (loc is String && loc.contains('POINT')) {
+          final parts = loc.split('(')[1].split(')')[0].split(' ');
+          final lon = double.parse(parts[0]);
+          final lat = double.parse(parts[1]);
+          return LatLng(latitude: lat, longitude: lon);
+        }
+        if (loc is Map<String, dynamic>) {
+          return LatLng.fromGeoJson(loc);
+        }
+      } catch (e) {
+        return null;
+      }
+      return null;
+    }
+
     return StoreModel(
       id: json['id'] as int,
       name: json['name'] as String,
       address: json['address'] as String? ?? 'آدرس نامشخص',
-      logoUrl: json['logo_url'] as String,
+      logoUrl: json['logo_url'] as String? ?? '',
       isOpen: json['is_open'] as bool? ?? true,
-      rating: (json['rating'] as num?)?.toDouble() ?? 4.5,
+      rating: (json['rating'] as num?)?.toDouble() ?? 0.0, // <-- تغییر: پیش‌فرض 0
       ratingCount: json['rating_count'] as int? ?? 0,
-      cuisineType: json['cuisine_type'] as String? ?? 'فست فود',
+      cuisineType: json['cuisine_type'] as String? ?? 'متفرقه',
       deliveryTimeEstimate:
-          json['delivery_time_estimate'] as String? ?? '۲۰-۳۰ دقیقه',
+          json['delivery_time_estimate'] as String? ?? 'نامشخص',
+      location: parseLocation(json['location']), // <-- جدید
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'address': address,
-      'logo_url': logoUrl,
-      'is_open': isOpen,
-      'rating': rating,
-      'rating_count': ratingCount,
-      'cuisine_type': cuisineType,
-      'delivery_time_estimate': deliveryTimeEstimate,
-    };
-  }
+  // ... متد toJson اگر نیاز بود ...
 }

@@ -62,7 +62,7 @@ class CartRemoteDataSourceImpl implements CartRemoteDataSource {
         // Manually build the ProductModel with the nested storeName
         final product = ProductModel.fromJson(
           productData,
-        ).copyWith(storeName: storeData['name']);
+        ).copyWith();
 
         return CartItemModel.fromSupabase(data, product);
       }).toList();

@@ -1,6 +1,7 @@
 // lib/features/store/presentation/pages/store_list_page.dart
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:customer_app/features/store/presentation/cubit/store_cubit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
@@ -28,13 +29,24 @@ class StoreListPage extends StatefulWidget {
 }
 
 class _StoreListPageState extends State<StoreListPage> {
-  final _pageController = PageController(viewportFraction: 0.9);
-
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
   @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    // --- این خط را تغییر دهید ---
+    // (قبلی: context.read<StoreCubit>().getStores();)
+    // جدید:
+    context.read<StoreCubit>().fetchStoresNearUser();
+    // --------------------------
+    _pageController.addListener(() {
+      setState(() {
+        _currentPage = _pageController.page!.round();
+      });
+    });
   }
+
+  
 
   @override
   Widget build(BuildContext context) {
@@ -480,10 +492,11 @@ class _StoreListPageState extends State<StoreListPage> {
       child: InkWell(
         onTap: () => Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (_) =>
-                ProductListPage(storeId: store.id, storeName: store.name),
-          ),
+         MaterialPageRoute(
+    builder: (context) => ProductListPage(
+      store: store, // <-- ما کل آبجکت store را پاس می‌دهیم
+    ),
+  ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

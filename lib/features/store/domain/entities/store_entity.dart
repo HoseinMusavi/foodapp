@@ -2,6 +2,8 @@
 
 import 'package:equatable/equatable.dart';
 
+import '../../../../core/utils/lat_lng.dart'; // <-- ایمپورت کلاس جدید
+
 class StoreEntity extends Equatable {
   final int id;
   final String name;
@@ -12,6 +14,7 @@ class StoreEntity extends Equatable {
   final int ratingCount;
   final String cuisineType;
   final String deliveryTimeEstimate;
+  final LatLng? location; // <-- جدید: موقعیت مکانی رستوران
 
   const StoreEntity({
     required this.id,
@@ -23,8 +26,17 @@ class StoreEntity extends Equatable {
     required this.ratingCount,
     required this.cuisineType,
     required this.deliveryTimeEstimate,
+    this.location,
   });
 
   @override
-  List<Object?> get props => [id, name, address, logoUrl, isOpen, rating];
+  List<Object?> get props => [
+        id,
+        name,
+        address,
+        logoUrl,
+        isOpen,
+        rating,
+        location,
+      ];
 }

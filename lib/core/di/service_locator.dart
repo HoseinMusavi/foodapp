@@ -47,6 +47,8 @@ import '../../features/store/data/repositories/store_repository_impl.dart';
 import '../../features/store/domain/repositories/store_repository.dart';
 import '../../features/store/domain/usecases/get_stores_usecase.dart';
 import '../../features/store/presentation/cubit/dashboard_cubit.dart';
+import 'package:customer_app/features/product/domain/usecases/get_product_categories_usecase.dart';
+import 'package:customer_app/features/product/domain/usecases/get_product_options_usecase.dart';
 
 final sl = GetIt.instance;
 
@@ -102,7 +104,13 @@ Future<void> init() async {
   );
 
   // --- Product ---
-  sl.registerFactory(() => ProductCubit(getProductsByStoreUsecase: sl()));
+  sl.registerFactory(
+    () => ProductCubit(
+      getProductsUsecase: sl(),
+      getCategoriesUsecase: sl(), // <-- جدید
+      getOptionsUsecase: sl(),    // <-- جدید
+    ),
+  );
   sl.registerLazySingleton(() => GetProductsByStoreUsecase(sl()));
   sl.registerLazySingleton<ProductRepository>(
     () => ProductRepositoryImpl(remoteDataSource: sl()),
@@ -133,6 +141,10 @@ Future<void> init() async {
   sl.registerLazySingleton(() => AddProductToCartUsecase(sl()));
   sl.registerLazySingleton(() => RemoveProductFromCartUsecase(sl()));
   sl.registerLazySingleton(() => UpdateProductQuantityUsecase(sl()));
+  sl.registerLazySingleton(() => GetProductCategoriesUsecase(sl())); // <-- جدید
+  sl.registerLazySingleton(() => GetProductOptionsUsecase(sl()));    // <-- جدید
+   sl.registerLazySingleton(() => GetProductsByStoreUsecase(sl()));    // <-- جدید
+  
   sl.registerLazySingleton<CartRepository>(
     () => CartRepositoryImpl(remoteDataSource: sl()),
   );
