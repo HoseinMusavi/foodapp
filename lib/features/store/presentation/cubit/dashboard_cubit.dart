@@ -24,10 +24,16 @@ class DashboardCubit extends Cubit<DashboardState> {
 
   Future<void> fetchDashboardData() async {
     try {
+      // --- ۱. چک کردن قبل از emit اول ---
+      if (isClosed) return; // اگر بسته شده، خارج شو
       emit(state.copyWith(status: DashboardStatus.loading));
+
 
       // 3. --- دریافت موقعیت مکانی قبل از هرچیز ---
       final locationData = await _getCurrentLocation();
+      // --- ۱.۱ چک کردن بعد از await ---
+      if (isClosed) return;
+
       final latLng = LatLng(
         latitude: locationData.latitude,
         longitude: locationData.longitude,
@@ -39,7 +45,9 @@ class DashboardCubit extends Cubit<DashboardState> {
         getPromotionsUsecase(NoParams()),
         getStoresUsecase(storeParams), // 5. استفاده از پارامتر جدید
       ]);
-      // ... (بقیه کد فایل بدون تغییر باقی می‌ماند) ...
+
+      // --- ۲. اطمینان از بسته نبودن قبل از پردازش نتایج ---
+      if (isClosed) return;
 
       final promotionsResult =
           results[0] as Either<Failure, List<PromotionEntity>>;
@@ -47,43 +55,56 @@ class DashboardCubit extends Cubit<DashboardState> {
 
       promotionsResult.fold(
         (failure) {
-          emit(
-            state.copyWith(
-              status: DashboardStatus.failure,
-              errorMessage: 'خطا در دریافت تبلیغات',
-            ),
-          );
+          // --- ۳. چک کردن قبل از emit خطا ---
+          if (!isClosed) {
+            emit(
+              state.copyWith(
+                status: DashboardStatus.failure,
+                errorMessage: 'خطا در دریافت تبلیغات',
+              ),
+            );
+          }
         },
         (promotions) {
+          // --- اطمینان از بسته نبودن قبل از fold داخلی ---
+          if (isClosed) return;
           storesResult.fold(
             (failure) {
-              emit(
-                state.copyWith(
-                  status: DashboardStatus.failure,
-                  errorMessage: 'خطا در دریافت فروشگاه‌ها',
-                ),
-              );
+              // --- ۴. چک کردن قبل از emit خطا ---
+              if (!isClosed) {
+                emit(
+                  state.copyWith(
+                    status: DashboardStatus.failure,
+                    errorMessage: 'خطا در دریافت فروشگاه‌ها',
+                  ),
+                );
+              }
             },
             (stores) {
-              emit(
-                state.copyWith(
-                  status: DashboardStatus.success,
-                  promotions: promotions,
-                  stores: stores,
-                ),
-              );
+              // --- ۵. چک کردن قبل از emit موفقیت ---
+              if (!isClosed) {
+                emit(
+                  state.copyWith(
+                    status: DashboardStatus.success,
+                    promotions: promotions,
+                    stores: stores,
+                  ),
+                );
+              }
             },
           );
         },
       );
     } catch (e) {
-      // 6. مدیریت خطاهای موقعیت مکانی
-      emit(
-        state.copyWith(
-          status: DashboardStatus.failure,
-          errorMessage: e.toString(),
-        ),
-      );
+      // --- ۶. چک کردن قبل از emit خطا در catch ---
+      if (!isClosed) {
+        emit( // این همان خط ۸۱ شما بود
+          state.copyWith(
+            status: DashboardStatus.failure,
+            errorMessage: e.toString(), // نمایش پیام خطای واقعی بهتر است
+          ),
+        );
+      }
     }
   }
 
@@ -96,12 +117,17 @@ class DashboardCubit extends Cubit<DashboardState> {
 
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
+      // --- چک قبل از throw ---
+      if (isClosed) throw Exception("Cubit closed while checking location service");
       throw LocationServiceDisabledException();
     }
 
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
+       // --- چک کردن بعد از await ---
+      if (isClosed) throw Exception("Cubit closed during permission request"); // یا یک خطای سفارشی
+
       if (permission == LocationPermission.denied) {
         throw PermissionDeniedException('Location permissions are denied');
       }
@@ -111,8 +137,11 @@ class DashboardCubit extends Cubit<DashboardState> {
       throw PermissionDeniedException(
           'Location permissions are permanently denied, we cannot request permissions.');
     }
-    
+
     final settings = LocationSettings(accuracy: LocationAccuracy.high);
+    // --- اطمینان از بسته نبودن قبل از آخرین await ---
+    if (isClosed) throw Exception("Cubit closed before getting position");
+
     return await Geolocator.getCurrentPosition(locationSettings: settings);
   }
 }

@@ -1,7 +1,8 @@
 // lib/features/store/presentation/pages/store_list_page.dart
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:customer_app/features/store/presentation/cubit/store_cubit.dart';
+// ⚠️ StoreCubit دیگر اینجا استفاده نمی‌شود، می‌توان ایمپورتش را پاک کرد
+// import 'package:customer_app/features/store/presentation/cubit/store_cubit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
@@ -9,7 +10,7 @@ import 'package:shimmer/shimmer.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 
 import 'package:customer_app/features/promotion/domain/entities/promotion_entity.dart';
-import 'package:customer_app/features/store/presentation/cubit/dashboard_cubit.dart';
+import 'package:customer_app/features/store/presentation/cubit/dashboard_cubit.dart'; // از DashboardCubit استفاده می‌کنیم
 import '../../../../core/di/service_locator.dart';
 import '../../domain/entities/store_entity.dart';
 import '../../../product/presentation/pages/product_list_page.dart';
@@ -21,6 +22,7 @@ class Category {
   Category({required this.name, required this.imageUrl});
 }
 
+// ۱. باید StatefulWidget باشد
 class StoreListPage extends StatefulWidget {
   const StoreListPage({super.key});
 
@@ -28,75 +30,93 @@ class StoreListPage extends StatefulWidget {
   State<StoreListPage> createState() => _StoreListPageState();
 }
 
-class _StoreListPageState extends State<StoreListPage> {
+// ۲. اضافه کردن AutomaticKeepAliveClientMixin
+class _StoreListPageState extends State<StoreListPage>
+    with AutomaticKeepAliveClientMixin { // <-- اضافه شد
   final PageController _pageController = PageController();
-  int _currentPage = 0;
+  // فیلد _currentPage در کد شما استفاده نشده بود، من آن را حذف کردم
+  // int _currentPage = 0;
+
   @override
   void initState() {
     super.initState();
-    // --- این خط را تغییر دهید ---
-    // (قبلی: context.read<StoreCubit>().getStores();)
-    // جدید:
-    context.read<StoreCubit>().fetchStoresNearUser();
-    // --------------------------
-    _pageController.addListener(() {
-      setState(() {
-        _currentPage = _pageController.page!.round();
-      });
-    });
+    // فراخوانی fetchDashboardData اینجا نیست (درست است، در main_shell انجام می‌شود)
+
+    // Listener برای _currentPage بود که حذف شد
+    // _pageController.addListener(() {
+    //   setState(() {
+    //     _currentPage = _pageController.page!.round();
+    //   });
+    // });
   }
 
-  
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  // ۳. اضافه کردن wantKeepAlive
+  @override
+  bool get wantKeepAlive => true; // <-- اضافه شد
 
   @override
   Widget build(BuildContext context) {
+    // ۴. اضافه کردن super.build(context)
+    super.build(context); // <-- اضافه شد
+
     return Scaffold(
       backgroundColor: Colors.white,
-      body: BlocProvider(
-        create: (context) => sl<DashboardCubit>()..fetchDashboardData(),
-        child: BlocBuilder<DashboardCubit, DashboardState>(
-          builder: (context, state) {
-            // --- UX Improvement: Show skeleton loader on initial load ---
-            if (state.status == DashboardStatus.loading &&
-                state.stores.isEmpty) {
-              return _buildLoadingSkeleton();
-            }
+      // ۵. دیگر نیازی به BlocProvider اینجا نیست، چون در main_shell فراهم شده
+      // child: BlocProvider(...),
+      // به جای آن مستقیماً از BlocBuilder استفاده می‌کنیم
+      body: BlocBuilder<DashboardCubit, DashboardState>( // <-- Cubit صحیح
+        builder: (context, state) {
+          // --- حالت لودینگ اولیه ---
+          if (state.status == DashboardStatus.loading && state.stores.isEmpty) {
+            return _buildLoadingSkeleton();
+          }
 
-            // --- UX Improvement: Show a user-friendly error widget with a retry button ---
-            if (state.status == DashboardStatus.failure) {
-              return _buildErrorWidget(
-                message: state.errorMessage ?? 'خطا در برقراری ارتباط با سرور',
-                onRetry: () =>
-                    context.read<DashboardCubit>().fetchDashboardData(),
-              );
-            }
-
-            return RefreshIndicator(
-              onRefresh: () async =>
+          // --- حالت خطا ---
+          if (state.status == DashboardStatus.failure) {
+            return _buildErrorWidget(
+              message: state.errorMessage ?? 'خطا در برقراری ارتباط با سرور',
+              onRetry: () =>
                   context.read<DashboardCubit>().fetchDashboardData(),
-              child: CustomScrollView(
-                slivers: [
-                  _buildSliverAppBar(context),
-                  _buildSectionTitle('دسته‌بندی‌ها'),
-                  _buildCategoriesSliver(),
-                  if (state.promotions.isNotEmpty) ...[
-                    _buildSectionTitle('پیشنهادهای ویژه'),
-                    _buildPromotionsSliver(context, state.promotions),
-                  ],
-                  _buildSectionTitle('همه فروشگاه‌ها'),
-                  // --- UX Improvement: Show empty state if no stores are available ---
-                  if (state.stores.isEmpty)
-                    _buildEmptyState('فروشگاهی یافت نشد!')
-                  else
-                    _buildStoresGrid(context, state.stores),
-                ],
-              ),
             );
-          },
-        ),
+          }
+
+          // --- حالت موفقیت یا لودینگ (برای رفرش) ---
+          // اگر stores خالی نباشد، حتی در حالت لودینگ هم لیست قبلی را نشان می‌دهیم
+          // تا کاربر هنگام رفرش صفحه خالی نبیند
+          return RefreshIndicator(
+            onRefresh: () async =>
+                context.read<DashboardCubit>().fetchDashboardData(),
+            child: CustomScrollView(
+              slivers: [
+                _buildSliverAppBar(context),
+                _buildSectionTitle('دسته‌بندی‌ها'),
+                _buildCategoriesSliver(),
+                if (state.promotions.isNotEmpty) ...[
+                  _buildSectionTitle('پیشنهادهای ویژه'),
+                  _buildPromotionsSliver(context, state.promotions),
+                ],
+                _buildSectionTitle('همه فروشگاه‌ها'),
+                if (state.stores.isEmpty)
+                  _buildEmptyState('فروشگاهی یافت نشد!')
+                else
+                  _buildStoresGrid(context, state.stores),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
+
+  // --- بقیه متدهای build (مثل _buildSliverAppBar, _buildLoadingSkeleton, ...) ---
+  // --- بدون تغییر باقی می‌مانند ... ---
+  // --- (من فقط برای اختصار حذفشان کردم، شما نگهشان دارید) ---
 
   // --- AppBar with a floating search bar ---
   SliverAppBar _buildSliverAppBar(BuildContext context) {
@@ -344,7 +364,7 @@ class _StoreListPageState extends State<StoreListPage> {
                             child: Material(
                               color: Theme.of(
                                 context,
-                              ).colorScheme.primary.withOpacity(0.08),
+                              ).colorScheme.primary.withAlpha(20), // Use withAlpha
                               borderRadius: BorderRadius.circular(16),
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(16),
@@ -493,10 +513,10 @@ class _StoreListPageState extends State<StoreListPage> {
         onTap: () => Navigator.push(
           context,
          MaterialPageRoute(
-    builder: (context) => ProductListPage(
-      store: store, // <-- ما کل آبجکت store را پاس می‌دهیم
-    ),
-  ),
+            builder: (context) => ProductListPage(
+              store: store, // <-- کل آبجکت store پاس داده می‌شود (درست است)
+            ),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -504,7 +524,8 @@ class _StoreListPageState extends State<StoreListPage> {
             Expanded(
               flex: 5,
               child: CachedNetworkImage(
-                imageUrl: store.logoUrl ?? '',
+                // imageUrl: store.logoUrl ?? '', // قبلاً null check اینجا بود
+                imageUrl: store.logoUrl, // logoUrl دیگر null نیست طبق مدل جدید
                 fit: BoxFit.cover,
                 width: double.infinity,
                 placeholder: (context, url) =>
@@ -551,11 +572,11 @@ class _StoreListPageState extends State<StoreListPage> {
                             style: const TextStyle(
                               fontSize: 12,
                               color: Colors.black,
-                              fontFamily: 'Vazirmatn',
+                              fontFamily: 'Vazirmatn', // اطمینان از اعمال فونت
                             ),
                             children: [
                               TextSpan(
-                                text: store.rating.toString(),
+                                text: store.rating.toStringAsFixed(1), // نمایش یک رقم اعشار
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -592,4 +613,4 @@ class _StoreListPageState extends State<StoreListPage> {
       ),
     );
   }
-}
+} // <-- پایان کلاس _StoreListPageState
