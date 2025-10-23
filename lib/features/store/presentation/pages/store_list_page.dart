@@ -1,8 +1,6 @@
 // lib/features/store/presentation/pages/store_list_page.dart
 
 import 'package:cached_network_image/cached_network_image.dart';
-// ⚠️ StoreCubit دیگر اینجا استفاده نمی‌شود، می‌توان ایمپورتش را پاک کرد
-// import 'package:customer_app/features/store/presentation/cubit/store_cubit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
@@ -11,11 +9,11 @@ import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 
 import 'package:customer_app/features/promotion/domain/entities/promotion_entity.dart';
 import 'package:customer_app/features/store/presentation/cubit/dashboard_cubit.dart'; // از DashboardCubit استفاده می‌کنیم
-import '../../../../core/di/service_locator.dart';
+// دیگر نیازی به service_locator اینجا نیست
 import '../../domain/entities/store_entity.dart';
 import '../../../product/presentation/pages/product_list_page.dart';
 
-// مدل دسته‌بندی را برای استفاده از عکس به‌روز می‌کنیم
+// مدل دسته‌بندی
 class Category {
   final String name;
   final String imageUrl;
@@ -34,20 +32,11 @@ class StoreListPage extends StatefulWidget {
 class _StoreListPageState extends State<StoreListPage>
     with AutomaticKeepAliveClientMixin { // <-- اضافه شد
   final PageController _pageController = PageController();
-  // فیلد _currentPage در کد شما استفاده نشده بود، من آن را حذف کردم
-  // int _currentPage = 0;
 
   @override
   void initState() {
     super.initState();
-    // فراخوانی fetchDashboardData اینجا نیست (درست است، در main_shell انجام می‌شود)
-
-    // Listener برای _currentPage بود که حذف شد
-    // _pageController.addListener(() {
-    //   setState(() {
-    //     _currentPage = _pageController.page!.round();
-    //   });
-    // });
+    // فراخوانی fetchDashboardData اینجا نیست (در main_shell انجام می‌شود)
   }
 
   @override
@@ -67,9 +56,6 @@ class _StoreListPageState extends State<StoreListPage>
 
     return Scaffold(
       backgroundColor: Colors.white,
-      // ۵. دیگر نیازی به BlocProvider اینجا نیست، چون در main_shell فراهم شده
-      // child: BlocProvider(...),
-      // به جای آن مستقیماً از BlocBuilder استفاده می‌کنیم
       body: BlocBuilder<DashboardCubit, DashboardState>( // <-- Cubit صحیح
         builder: (context, state) {
           // --- حالت لودینگ اولیه ---
@@ -87,8 +73,6 @@ class _StoreListPageState extends State<StoreListPage>
           }
 
           // --- حالت موفقیت یا لودینگ (برای رفرش) ---
-          // اگر stores خالی نباشد، حتی در حالت لودینگ هم لیست قبلی را نشان می‌دهیم
-          // تا کاربر هنگام رفرش صفحه خالی نبیند
           return RefreshIndicator(
             onRefresh: () async =>
                 context.read<DashboardCubit>().fetchDashboardData(),
@@ -102,7 +86,7 @@ class _StoreListPageState extends State<StoreListPage>
                   _buildPromotionsSliver(context, state.promotions),
                 ],
                 _buildSectionTitle('همه فروشگاه‌ها'),
-                if (state.stores.isEmpty)
+                if (state.stores.isEmpty && state.status != DashboardStatus.loading)
                   _buildEmptyState('فروشگاهی یافت نشد!')
                 else
                   _buildStoresGrid(context, state.stores),
@@ -114,11 +98,7 @@ class _StoreListPageState extends State<StoreListPage>
     );
   }
 
-  // --- بقیه متدهای build (مثل _buildSliverAppBar, _buildLoadingSkeleton, ...) ---
-  // --- بدون تغییر باقی می‌مانند ... ---
-  // --- (من فقط برای اختصار حذفشان کردم، شما نگهشان دارید) ---
-
-  // --- AppBar with a floating search bar ---
+  // --- AppBar ---
   SliverAppBar _buildSliverAppBar(BuildContext context) {
     return SliverAppBar(
       floating: true,
@@ -159,7 +139,7 @@ class _StoreListPageState extends State<StoreListPage>
     );
   }
 
-  // --- A reusable widget for section titles ---
+  // --- Section Title ---
   SliverToBoxAdapter _buildSectionTitle(String title) {
     return SliverToBoxAdapter(
       child: Padding(
@@ -172,7 +152,7 @@ class _StoreListPageState extends State<StoreListPage>
     );
   }
 
-  // --- UX Improvement: A dedicated widget for the loading skeleton ---
+  // --- Loading Skeleton ---
   Widget _buildLoadingSkeleton() {
     return Shimmer.fromColors(
       baseColor: Colors.grey[200]!,
@@ -246,7 +226,7 @@ class _StoreListPageState extends State<StoreListPage>
     );
   }
 
-  // --- UX Improvement: A dedicated widget for showing errors ---
+  // --- Error Widget ---
   Widget _buildErrorWidget({
     required String message,
     required VoidCallback onRetry,
@@ -293,7 +273,7 @@ class _StoreListPageState extends State<StoreListPage>
     );
   }
 
-  // --- UX Improvement: A widget for empty states ---
+  // --- Empty State Widget ---
   SliverFillRemaining _buildEmptyState(String message) {
     return SliverFillRemaining(
       child: Center(
@@ -312,8 +292,9 @@ class _StoreListPageState extends State<StoreListPage>
     );
   }
 
-  // --- Categories with added animations and tap feedback ---
+  // --- Categories Sliver ---
   SliverToBoxAdapter _buildCategoriesSliver() {
+    // این لیست دسته‌بندی فعلاً ثابت است، می‌توانید بعداً از بک‌اند بگیرید
     final List<Category> categories = [
       Category(
         name: 'برگر',
@@ -357,14 +338,11 @@ class _StoreListPageState extends State<StoreListPage>
                       padding: const EdgeInsets.only(right: 16.0),
                       child: Column(
                         children: [
-                          // --- UX Improvement: Use InkWell for tap feedback ---
                           SizedBox(
                             width: 70,
                             height: 70,
                             child: Material(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primary.withAlpha(20), // Use withAlpha
+                              color: Theme.of(context).colorScheme.primary.withAlpha(20),
                               borderRadius: BorderRadius.circular(16),
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(16),
@@ -373,17 +351,13 @@ class _StoreListPageState extends State<StoreListPage>
                                 },
                                 child: Padding(
                                   padding: const EdgeInsets.all(12),
-                                  // --- UX Improvement: Use CachedNetworkImage ---
                                   child: CachedNetworkImage(
                                     imageUrl: category.imageUrl,
-                                    placeholder: (c, u) => Center(
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
+                                    placeholder: (c, u) => const Center(
+                                      child: CircularProgressIndicator(strokeWidth: 2),
                                     ),
                                     errorWidget: (c, u, e) => Icon(
-                                      Icons.fastfood_outlined,
-                                      color: Colors.grey[400],
+                                      Icons.fastfood_outlined, color: Colors.grey[400],
                                     ),
                                   ),
                                 ),
@@ -393,10 +367,7 @@ class _StoreListPageState extends State<StoreListPage>
                           const SizedBox(height: 8),
                           Text(
                             category.name,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                           ),
                         ],
                       ),
@@ -411,7 +382,7 @@ class _StoreListPageState extends State<StoreListPage>
     );
   }
 
-  // --- Promotions carousel ---
+  // --- Promotions Sliver ---
   SliverToBoxAdapter _buildPromotionsSliver(
     BuildContext context,
     List<PromotionEntity> promotions,
@@ -434,16 +405,12 @@ class _StoreListPageState extends State<StoreListPage>
                   margin: const EdgeInsets.symmetric(horizontal: 6.0),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16.0),
-                    // --- UX Improvement: Use CachedNetworkImage ---
                     child: CachedNetworkImage(
                       imageUrl: promotion.imageUrl,
                       fit: BoxFit.cover,
                       placeholder: (c, u) => Container(color: Colors.grey[200]),
                       errorWidget: (c, u, e) => Center(
-                        child: Icon(
-                          Icons.broken_image,
-                          color: Colors.grey[400],
-                        ),
+                        child: Icon(Icons.broken_image, color: Colors.grey[400]),
                       ),
                     ),
                   ),
@@ -467,7 +434,7 @@ class _StoreListPageState extends State<StoreListPage>
     );
   }
 
-  // --- Stores grid with animations ---
+  // --- Stores Grid ---
   Widget _buildStoresGrid(BuildContext context, List<StoreEntity> stores) {
     final screenWidth = MediaQuery.of(context).size.width;
     final crossAxisCount = (screenWidth > 600) ? 3 : 2;
@@ -499,7 +466,7 @@ class _StoreListPageState extends State<StoreListPage>
     );
   }
 
-  // --- Store card with improved visuals and tap feedback ---
+  // --- Store Card (با اصلاح Flexible) ---
   Widget _buildStoreCard(BuildContext context, StoreEntity store) {
     return Card(
       elevation: 0,
@@ -507,14 +474,13 @@ class _StoreListPageState extends State<StoreListPage>
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: Colors.grey.shade200, width: 1.0),
       ),
-      clipBehavior: Clip
-          .antiAlias, // Ensures the InkWell ripple stays within the card's rounded borders
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => Navigator.push(
           context,
-         MaterialPageRoute(
+          MaterialPageRoute(
             builder: (context) => ProductListPage(
-              store: store, // <-- کل آبجکت store پاس داده می‌شود (درست است)
+              store: store, // <-- کل آبجکت store پاس داده می‌شود
             ),
           ),
         ),
@@ -524,12 +490,10 @@ class _StoreListPageState extends State<StoreListPage>
             Expanded(
               flex: 5,
               child: CachedNetworkImage(
-                // imageUrl: store.logoUrl ?? '', // قبلاً null check اینجا بود
-                imageUrl: store.logoUrl, // logoUrl دیگر null نیست طبق مدل جدید
+                imageUrl: store.logoUrl,
                 fit: BoxFit.cover,
                 width: double.infinity,
-                placeholder: (context, url) =>
-                    Container(color: Colors.grey[100]),
+                placeholder: (context, url) => Container(color: Colors.grey[100]),
                 errorWidget: (context, url, error) => Center(
                   child: Icon(Icons.store, color: Colors.grey[300], size: 40),
                 ),
@@ -543,7 +507,7 @@ class _StoreListPageState extends State<StoreListPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    Text(
+                    Text( // نام فروشگاه
                       store.name,
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
@@ -552,58 +516,62 @@ class _StoreListPageState extends State<StoreListPage>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    Text(
+                    Text( // نوع غذا
                       store.cuisineType,
                       style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    // --- شروع اصلاح Overflow ---
                     Row(
                       children: [
-                        Icon(
+                        Icon( // ستاره
                           Icons.star,
                           size: 16,
-                          color: Colors.amber.shade700,
+                          color: Colors.amber, // ساده‌تر
                         ),
                         const SizedBox(width: 4),
-                        // --- UX Improvement: Use RichText for better visual hierarchy ---
-                        RichText(
-                          text: TextSpan(
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.black,
-                              fontFamily: 'Vazirmatn', // اطمینان از اعمال فونت
-                            ),
-                            children: [
-                              TextSpan(
-                                text: store.rating.toStringAsFixed(1), // نمایش یک رقم اعشار
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
+                        Flexible( // اضافه کردن Flexible
+                          child: RichText( // امتیاز
+                            text: TextSpan(
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).textTheme.bodySmall?.color ?? Colors.black, // رنگ پیش‌فرض
+                                fontFamily: 'Vazirmatn',
+                              ),
+                              children: [
+                                TextSpan(
+                                  text: store.rating.toStringAsFixed(1),
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
                                 ),
-                              ),
-                              TextSpan(
-                                text: ' (${store.ratingCount})',
-                                style: const TextStyle(color: Colors.grey),
-                              ),
-                            ],
+                                TextSpan(
+                                  text: ' (${store.ratingCount})',
+                                  style: TextStyle(color: Colors.grey[600]),
+                                ),
+                              ],
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const Spacer(),
-                        Text(
-                          store.deliveryTimeEstimate,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
+                        const Spacer(), // Spacer خودش Flexible است
+                        Flexible( // اضافه کردن Flexible
+                          child: Text( // زمان
+                            store.deliveryTimeEstimate,
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const SizedBox(width: 2),
-                        const Icon(
+                        Icon( // آیکون تایمر
                           Icons.timer_outlined,
                           size: 14,
-                          color: Colors.grey,
+                          color: Colors.grey[600],
                         ),
                       ],
                     ),
+                    // --- پایان اصلاح Overflow ---
                   ],
                 ),
               ),

@@ -3,13 +3,14 @@ import 'package:bloc/bloc.dart';
 import 'package:customer_app/core/error/failure.dart';
 import 'package:dartz/dartz.dart';
 import 'package:equatable/equatable.dart';
-import 'package:geolocator/geolocator.dart'; // <-- 1. ایمپورت
-import '../../../../core/usecase/usecase.dart';
-import '../../../../core/utils/lat_lng.dart'; // <-- 2. ایمپورت
+// 1. --- حذف ایمپورت‌های geolocator و LatLng ---
+// import 'package:geolocator/geolocator.dart';
+// import '../../../../core/utils/lat_lng.dart';
+import '../../../../core/usecase/usecase.dart'; // NoParams را لازم داریم
 import '../../../promotion/domain/entities/promotion_entity.dart';
 import '../../../promotion/domain/usecases/get_promotions_usecase.dart';
 import '../../domain/entities/store_entity.dart';
-import '../../domain/usecases/get_stores_usecase.dart';
+import '../../domain/usecases/get_stores_usecase.dart'; // GetStoresUsecase را لازم داریم
 
 part 'dashboard_state.dart';
 
@@ -23,125 +24,65 @@ class DashboardCubit extends Cubit<DashboardState> {
   }) : super(const DashboardState());
 
   Future<void> fetchDashboardData() async {
-    try {
-      // --- ۱. چک کردن قبل از emit اول ---
-      if (isClosed) return; // اگر بسته شده، خارج شو
+    if (isClosed) return;
+    // حالت لودینگ را فقط اگر اولین بار است یا stores خالی است emit می‌کنیم
+    // تا در رفرش‌های بعدی، لیست قبلی نمایش داده شود
+    if (state.stores.isEmpty) {
+       emit(state.copyWith(status: DashboardStatus.loading));
+    } else {
+      // اگر لیست خالی نیست، فقط status را loading می‌کنیم تا RefreshIndicator کار کند
       emit(state.copyWith(status: DashboardStatus.loading));
+    }
 
 
-      // 3. --- دریافت موقعیت مکانی قبل از هرچیز ---
-      final locationData = await _getCurrentLocation();
-      // --- ۱.۱ چک کردن بعد از await ---
-      if (isClosed) return;
+    // 2. --- دریافت موقعیت مکانی حذف شد ---
 
-      final latLng = LatLng(
-        latitude: locationData.latitude,
-        longitude: locationData.longitude,
-      );
-      final storeParams = GetStoresParams(location: latLng); // 4. ساخت پارامتر
+    // دریافت همزمان داده‌ها با NoParams برای فروشگاه‌ها
+    final results = await Future.wait([
+      getPromotionsUsecase(NoParams()),
+      getStoresUsecase(NoParams()), // <-- 3. تغییر به NoParams
+    ]);
 
-      // دریافت همزمان داده‌ها
-      final results = await Future.wait([
-        getPromotionsUsecase(NoParams()),
-        getStoresUsecase(storeParams), // 5. استفاده از پارامتر جدید
-      ]);
+    if (isClosed) return;
 
-      // --- ۲. اطمینان از بسته نبودن قبل از پردازش نتایج ---
-      if (isClosed) return;
+    final promotionsResult =
+        results[0] as Either<Failure, List<PromotionEntity>>;
+    final storesResult = results[1] as Either<Failure, List<StoreEntity>>;
 
-      final promotionsResult =
-          results[0] as Either<Failure, List<PromotionEntity>>;
-      final storesResult = results[1] as Either<Failure, List<StoreEntity>>;
+    // بررسی خطاها
+    String? errorMessage;
+    if (promotionsResult.isLeft()) {
+       final failure = promotionsResult.swap().getOrElse(() => ServerFailure());
+       errorMessage = (failure is ServerFailure) ? failure.message : 'خطا در دریافت تبلیغات';
+    } else if (storesResult.isLeft()) {
+       final failure = storesResult.swap().getOrElse(() => ServerFailure());
+       errorMessage = (failure is ServerFailure) ? failure.message : 'خطا در دریافت فروشگاه‌ها';
+    }
 
-      promotionsResult.fold(
-        (failure) {
-          // --- ۳. چک کردن قبل از emit خطا ---
-          if (!isClosed) {
-            emit(
-              state.copyWith(
-                status: DashboardStatus.failure,
-                errorMessage: 'خطا در دریافت تبلیغات',
-              ),
-            );
-          }
-        },
-        (promotions) {
-          // --- اطمینان از بسته نبودن قبل از fold داخلی ---
-          if (isClosed) return;
-          storesResult.fold(
-            (failure) {
-              // --- ۴. چک کردن قبل از emit خطا ---
-              if (!isClosed) {
-                emit(
-                  state.copyWith(
-                    status: DashboardStatus.failure,
-                    errorMessage: 'خطا در دریافت فروشگاه‌ها',
-                  ),
-                );
-              }
-            },
-            (stores) {
-              // --- ۵. چک کردن قبل از emit موفقیت ---
-              if (!isClosed) {
-                emit(
-                  state.copyWith(
-                    status: DashboardStatus.success,
-                    promotions: promotions,
-                    stores: stores,
-                  ),
-                );
-              }
-            },
-          );
-        },
-      );
-    } catch (e) {
-      // --- ۶. چک کردن قبل از emit خطا در catch ---
+    if (errorMessage != null) {
       if (!isClosed) {
-        emit( // این همان خط ۸۱ شما بود
-          state.copyWith(
-            status: DashboardStatus.failure,
-            errorMessage: e.toString(), // نمایش پیام خطای واقعی بهتر است
-          ),
-        );
+        emit(state.copyWith(status: DashboardStatus.failure, errorMessage: errorMessage));
       }
+      return; // در صورت خطا، ادامه نده
+    }
+
+    // اگر هر دو موفق بودند
+    final promotions = promotionsResult.getOrElse(() => []);
+    final stores = storesResult.getOrElse(() => []);
+
+    if (!isClosed) {
+      emit(
+        state.copyWith(
+          status: DashboardStatus.success,
+          promotions: promotions,
+          stores: stores,
+          errorMessage: null, // خطای قبلی را پاک کن
+        ),
+      );
     }
   }
 
   void selectCategory(String categori) {}
 
-  // 7. --- کپی کردن تابع کمکی موقعیت مکانی ---
-  Future<Position> _getCurrentLocation() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      // --- چک قبل از throw ---
-      if (isClosed) throw Exception("Cubit closed while checking location service");
-      throw LocationServiceDisabledException();
-    }
-
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-       // --- چک کردن بعد از await ---
-      if (isClosed) throw Exception("Cubit closed during permission request"); // یا یک خطای سفارشی
-
-      if (permission == LocationPermission.denied) {
-        throw PermissionDeniedException('Location permissions are denied');
-      }
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      throw PermissionDeniedException(
-          'Location permissions are permanently denied, we cannot request permissions.');
-    }
-
-    final settings = LocationSettings(accuracy: LocationAccuracy.high);
-    // --- اطمینان از بسته نبودن قبل از آخرین await ---
-    if (isClosed) throw Exception("Cubit closed before getting position");
-
-    return await Geolocator.getCurrentPosition(locationSettings: settings);
-  }
+  // 4. --- تابع _getCurrentLocation کامل حذف شد ---
 }

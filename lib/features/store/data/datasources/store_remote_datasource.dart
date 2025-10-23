@@ -2,12 +2,13 @@
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/error/exceptions.dart';
-import '../../../../core/utils/lat_lng.dart'; // <-- ایمپورت
+// 1. --- حذف ایمپورت LatLng ---
+// import '../../../../core/utils/lat_lng.dart';
 import '../models/store_model.dart';
 
 abstract class StoreRemoteDataSource {
-  // نام متد را برای هماهنگی با بک‌اند تغییر می‌دهیم
-  Future<List<StoreModel>> getStoresNearMe(LatLng location, double? radius);
+  // 2. --- تغییر نام متد و حذف پارامترها ---
+  Future<List<StoreModel>> getAllStores(); // قبلی: getStoresNearMe(LatLng location, double? radius);
 }
 
 class StoreRemoteDataSourceImpl implements StoreRemoteDataSource {
@@ -15,29 +16,19 @@ class StoreRemoteDataSourceImpl implements StoreRemoteDataSource {
 
   StoreRemoteDataSourceImpl({required this.supabaseClient});
 
+  // 3. --- تغییر نام متد پیاده‌سازی و حذف پارامترها ---
   @override
-  Future<List<StoreModel>> getStoresNearMe(
-      LatLng location, double? radius) async {
+  Future<List<StoreModel>> getAllStores() async { // قبلی: getStoresNearMe(LatLng location, double? radius)
     try {
-      // --- تغییر اصلی: فراخوانی تابع RPC که در بک‌اند ساختیم ---
-      final response = await supabaseClient.rpc(
-        'get_stores_near_me',
-        params: {
-          'p_lat': location.latitude,
-          'p_long': location.longitude,
-          // اگر شعاع نال بود، بک‌اند از مقدار پیش‌فرض خودش استفاده می‌کند
-          if (radius != null) 'p_distance_meters': radius,
-        },
-      );
+      // استفاده از select ساده صحیح است
+      final response = await supabaseClient.from('stores').select();
 
-      // بقیه کد مثل قبل است
       final stores = (response as List)
           .map((storeData) => StoreModel.fromJson(storeData))
           .toList();
 
       return stores;
     } catch (e) {
-      // مدیریت بهتر خطاها
       if (e is PostgrestException) {
         throw ServerException(message: e.message);
       }
