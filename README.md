@@ -29,11 +29,7 @@
 * **تزریق وابستگی (Dependency Injection):** GetIt (Service Locator)
 * **معماری:** Clean Architecture (تقسیم‌بندی به لایه‌های Domain, Data, Presentation)
 
----
 
-## Screenshots (اختیاری)
-
----
 
 ## 🏁 شروع به کار (Getting Started)
 
