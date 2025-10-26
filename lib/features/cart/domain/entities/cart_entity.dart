@@ -4,29 +4,23 @@ import 'package:equatable/equatable.dart';
 import 'cart_item_entity.dart';
 
 class CartEntity extends Equatable {
+  // ✨ فیکس: کانستراکتور آپدیت شد (دیگر id نمی‌خواهد)
   final List<CartItemEntity> items;
 
-  const CartEntity({
-    this.items = const [],
-  }); // به صورت پیش‌فرض، لیست آیتم‌ها خالی است
+  const CartEntity({required this.items});
 
-  // یک getter برای محاسبه قیمت کل سبد خرید
+  // Helper to get total price of the entire cart
   double get totalPrice {
-    if (items.isEmpty) {
-      return 0;
-    }
-    // قیمت کل هر آیتم را با هم جمع می‌زنیم
-    return items.map((item) => item.totalPrice).reduce((a, b) => a + b);
+    // ✨ فیکس: (رفع خطای ۶) از 'item.totalPrice' استفاده شد
+    return items.fold(
+        0.0, (sum, item) => sum + item.totalPrice);
   }
 
-  // یک getter برای محاسبه تعداد کل آیتم‌ها در سبد
+  // Helper to get total number of items
   int get totalItems {
-    if (items.isEmpty) {
-      return 0;
-    }
-    return items.map((item) => item.quantity).reduce((a, b) => a + b);
+    return items.fold(0, (sum, item) => sum + item.quantity);
   }
 
   @override
-  List<Object?> get props => [items];
+  List<Object> get props => [items];
 }

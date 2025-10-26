@@ -5,15 +5,19 @@ class OptionEntity extends Equatable {
   final int id;
   final int optionGroupId;
   final String name;
-  final double priceDelta; // تغییر قیمت (مثبت یا منفی)
+  final double priceDelta;
+  // ✨ اضافه شد: برای نگهداری نام گروه (مثلاً "سایز" یا "نوشیدنی")
+  final String? groupName;
 
   const OptionEntity({
     required this.id,
     required this.optionGroupId,
     required this.name,
     required this.priceDelta,
+    this.groupName, // ✨ اضافه شد
   });
 
   @override
-  List<Object?> get props => [id, name, priceDelta];
+  // ✨ اضافه شد: groupName به props
+  List<Object?> get props => [id, optionGroupId, name, priceDelta, groupName];
 }
