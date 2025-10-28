@@ -1,28 +1,18 @@
-import 'dart:io';
 import 'package:customer_app/core/error/failure.dart';
+import 'package:customer_app/core/usecase/usecase.dart';
+import 'package:customer_app/features/customer/domain/entities/customer_entity.dart';
+import 'package:customer_app/features/customer/domain/repositories/customer_repository.dart';
 import 'package:dartz/dartz.dart';
-import '../../../../core/usecase/usecase.dart';
-import '../entities/customer_entity.dart';
-import '../repositories/customer_repository.dart';
 
-class UpdateCustomerProfile
-    implements UseCase<CustomerEntity, UpdateCustomerParams> {
+// UseCase حالا CustomerEntity را به عنوان پارامتر می پذیرد
+class UpdateCustomerProfile extends UseCase<CustomerEntity, CustomerEntity> {
   final CustomerRepository repository;
+
   UpdateCustomerProfile(this.repository);
 
   @override
-  Future<Either<Failure, CustomerEntity>> call(
-    UpdateCustomerParams params,
-  ) async {
-    return await repository.updateCustomerProfile(
-      params.customer,
-      params.imageFile,
-    );
+  Future<Either<Failure, CustomerEntity>> call(CustomerEntity params) async {
+    // پارامتر دریافتی (params) همان CustomerEntity است
+    return await repository.updateCustomerProfile(params);
   }
-}
-
-class UpdateCustomerParams {
-  final CustomerEntity customer;
-  final File? imageFile;
-  UpdateCustomerParams({required this.customer, this.imageFile});
 }

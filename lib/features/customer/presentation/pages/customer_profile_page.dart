@@ -1,162 +1,35 @@
-import 'dart:io';
-import 'package:customer_app/core/widgets/custom_network_image.dart';
+import 'package:customer_app/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:customer_app/features/customer/domain/entities/customer_entity.dart';
+import 'package:customer_app/features/customer/presentation/cubit/customer_cubit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:customer_app/features/customer/presentation/cubit/customer_cubit.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
-class CustomerProfilePage extends StatelessWidget {
+class CustomerProfilePage extends StatefulWidget {
   const CustomerProfilePage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: BlocConsumer<CustomerCubit, CustomerState>(
-        listener: (context, state) {
-          if (state is CustomerError && state.message != 'Profile not found') {
-            ScaffoldMessenger.of(context)
-              ..hideCurrentSnackBar()
-              ..showSnackBar(
-                SnackBar(
-                  content: Text('خطا: ${state.message}'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-          }
-        },
-        builder: (context, state) {
-          if (state is CustomerLoading || state is CustomerInitial) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (state is CustomerLoaded) {
-            return ProfileView(customer: state.customer);
-          }
-          // If state is CustomerError with 'Profile not found', show the create form.
-          final currentUser = Supabase.instance.client.auth.currentUser;
-          return CreateOrEditProfileForm(
-            isEditing: false,
-            // Create a dummy entity for the form
-            customer: CustomerEntity(
-              id: currentUser?.id ?? '',
-              email: currentUser?.email ?? '',
-              fullName: '',
-              phone: '',
-            ),
-          );
-        },
-      ),
-    );
-  }
+  State<CustomerProfilePage> createState() => _CustomerProfilePageState();
 }
 
-class ProfileView extends StatelessWidget {
-  final CustomerEntity customer;
-  const ProfileView({required this.customer, super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        SliverAppBar(
-          pinned: true,
-          expandedHeight: 250.0,
-          backgroundColor: Theme.of(context).primaryColor,
-          flexibleSpace: FlexibleSpaceBar(
-            title: Text(customer.fullName, style: const TextStyle(color: Colors.white)),
-            background: customer.avatarUrl != null && customer.avatarUrl!.isNotEmpty
-                ? CustomNetworkImage(imageUrl: customer.avatarUrl!, fit: BoxFit.cover)
-                : Container(color: Theme.of(context).primaryColor.withOpacity(0.5)),
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.logout, color: Colors.white),
-              onPressed: () => Supabase.instance.client.auth.signOut(),
-            ),
-          ],
-        ),
-        SliverList(
-          delegate: SliverChildListDelegate([
-            ListTile(
-              leading: const Icon(Icons.email_outlined),
-              title: Text(customer.email),
-            ),
-            ListTile(
-              leading: const Icon(Icons.phone_outlined),
-              title: Text(customer.phone),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.location_on_outlined),
-              title: const Text('آدرس‌های من'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                /* Navigate to address page */
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.history),
-              title: const Text('تاریخچه سفارشات'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                /* Navigate to order history */
-              },
-            ),
-            const Divider(),
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.edit),
-                label: const Text('ویرایش پروفایل'),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      // We provide the Cubit to the edit page
-                      builder: (_) => BlocProvider.value(
-                        value: context.read<CustomerCubit>(),
-                        child: CreateOrEditProfileForm(
-                          isEditing: true,
-                          customer: customer,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ]),
-        ),
-      ],
-    );
-  }
-}
-
-class CreateOrEditProfileForm extends StatefulWidget {
-  final bool isEditing;
-  final CustomerEntity customer;
-  const CreateOrEditProfileForm({
-    required this.isEditing,
-    required this.customer,
-    super.key,
-  });
-
-  @override
-  State<CreateOrEditProfileForm> createState() =>
-      _CreateOrEditProfileFormState();
-}
-
-class _CreateOrEditProfileFormState extends State<CreateOrEditProfileForm> {
+class _CustomerProfilePageState extends State<CustomerProfilePage> {
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _fullNameController;
-  late final TextEditingController _phoneController;
-  File? _imageFile;
+  late TextEditingController _fullNameController;
+  late TextEditingController _phoneController;
+
+  CustomerEntity? _currentCustomer;
+  bool _isEditing = false;
 
   @override
   void initState() {
     super.initState();
-    _fullNameController = TextEditingController(text: widget.customer.fullName);
-    _phoneController = TextEditingController(text: widget.customer.phone);
+    _fullNameController = TextEditingController();
+    _phoneController = TextEditingController();
+
+    final state = context.read<CustomerCubit>().state;
+    if (state is CustomerLoaded) {
+      _updateControllers(state.customer);
+      _currentCustomer = state.customer;
+    }
   }
 
   @override
@@ -166,111 +39,329 @@ class _CreateOrEditProfileFormState extends State<CreateOrEditProfileForm> {
     super.dispose();
   }
 
-  Future<void> _pickImage() async {
-    final pickedFile = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 50, // Compress image
-    );
-    if (pickedFile != null) {
-      setState(() {
-        _imageFile = File(pickedFile.path);
-      });
-    }
+  void _updateControllers(CustomerEntity customer) {
+    _fullNameController.text = customer.fullName;
+    _phoneController.text = customer.phone;
   }
 
-  void _submitForm() {
-    if (_formKey.currentState!.validate()) {
-      context
-          .read<CustomerCubit>()
-          .saveProfile(
-            fullName: _fullNameController.text.trim(),
-            phone: _phoneController.text.trim(),
-            imageFile: _imageFile,
-          )
-          .then((_) {
-            // After saving, if we are in edit mode, pop the screen
-            if (widget.isEditing && Navigator.canPop(context)) {
-              Navigator.pop(context);
-            }
-          });
+  void _onToggleEdit() {
+    setState(() {
+      _isEditing = !_isEditing;
+      // اگر در حال لغو ویرایش بودیم، مقادیر را ریست کن
+      if (!_isEditing && _currentCustomer != null) {
+        _updateControllers(_currentCustomer!);
+      }
+    });
+  }
+
+  void _onSaveProfile() {
+    if (_formKey.currentState!.validate() && _currentCustomer != null) {
+      final updatedCustomer = CustomerEntity(
+        id: _currentCustomer!.id,
+        email: _currentCustomer!.email, // ایمیل قابل ویرایش نیست
+        fullName: _fullNameController.text,
+        phone: _phoneController.text,
+        avatarUrl: _currentCustomer!.avatarUrl,
+        defaultAddressId: _currentCustomer!.defaultAddressId,
+      );
+      context.read<CustomerCubit>().updateCustomer(updatedCustomer);
+      setState(() {
+        _isEditing = false; // خروج از حالت ویرایش پس از ذخیره
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.isEditing ? 'ویرایش پروفایل' : 'تکمیل پروفایل'),
-      ),
-      body: BlocListener<CustomerCubit, CustomerState>(
-        // This listener will pop the page on successful update
+      body: BlocConsumer<CustomerCubit, CustomerState>(
         listener: (context, state) {
-          if (state is CustomerLoaded && widget.isEditing) {
-             // Navigator.of(context).pop();
+          if (state is CustomerError) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content: Text('خطا: ${state.message}'),
+                  backgroundColor: Colors.red),
+            );
+          }
+          if (state is CustomerLoaded) {
+            final currentState = context.read<CustomerCubit>().state;
+            if (currentState is! CustomerLoading) {
+              _updateControllers(state.customer);
+              _currentCustomer = state.customer;
+              // فقط اگر در حال ویرایش نبودیم اسنک بار نشان بده
+              if (!_isEditing) {
+                 ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text('پروفایل با موفقیت به‌روزرسانی شد'),
+                      backgroundColor: Colors.green),
+                );
+              }
+            }
           }
         },
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              children: [
-                Stack(
-                  alignment: Alignment.bottomRight,
-                  children: [
-                    CircleAvatar(
-                      radius: 60,
-                      backgroundImage: _imageFile != null
-                          ? FileImage(_imageFile!)
-                          : (widget.customer.avatarUrl != null &&
-                                  widget.customer.avatarUrl!.isNotEmpty
-                              ? NetworkImage(widget.customer.avatarUrl!)
-                              : null) as ImageProvider?,
-                      child: _imageFile == null &&
-                              (widget.customer.avatarUrl == null ||
-                                  widget.customer.avatarUrl!.isEmpty)
-                          ? const Icon(Icons.person_outline, size: 60)
-                          : null,
+        builder: (context, state) {
+          if (state is CustomerInitial) {
+            context.read<CustomerCubit>().fetchCustomerDetails();
+          }
+
+          if (state is CustomerLoading && _currentCustomer == null) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (state is CustomerError && _currentCustomer == null) {
+            return _buildErrorView(context, state.message);
+          }
+
+          // اگر در حال لودینگ بودیم ولی داده داشتیم، UI را با لودر نشان بده
+          final customer = (state is CustomerLoaded) ? state.customer : _currentCustomer;
+          final bool isLoading = (state is CustomerLoading);
+
+          return RefreshIndicator(
+            onRefresh: () async {
+               context.read<CustomerCubit>().fetchCustomerDetails();
+            },
+            child: CustomScrollView(
+              slivers: [
+                _buildAppBar(context, customer),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildProfileFormCard(context, customer, isLoading),
+                        const SizedBox(height: 24),
+                        _buildActionsCard(context),
+                        const SizedBox(height: 24),
+                        _buildLogoutButton(context),
+                      ],
                     ),
-                    IconButton.filled(
-                      icon: const Icon(Icons.camera_alt),
-                      onPressed: _pickImage,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 32),
-                TextFormField(
-                  controller: _fullNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'نام و نام خانوادگی',
                   ),
-                  validator: (value) =>
-                      value!.isEmpty ? 'لطفا نام خود را وارد کنید' : null,
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _phoneController,
-                  decoration: const InputDecoration(labelText: 'شماره تلفن'),
-                  keyboardType: TextInputType.phone,
-                  validator: (value) =>
-                      value!.isEmpty ? 'لطفا شماره تلفن را وارد کنید' : null,
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildAppBar(BuildContext context, CustomerEntity? customer) {
+    final avatarUrl = customer?.avatarUrl;
+    final fullName = customer?.fullName ?? '...';
+    final fallbackLetter = fullName.isNotEmpty ? fullName[0].toUpperCase() : 'U';
+
+    return SliverAppBar(
+      expandedHeight: 200.0,
+      floating: false,
+      pinned: true,
+      backgroundColor: Theme.of(context).colorScheme.primary,
+      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+      flexibleSpace: FlexibleSpaceBar(
+        title: Text(fullName, style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
+        centerTitle: true,
+        background: Stack(
+          fit: StackFit.expand,
+          children: [
+            Container(
+               decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Theme.of(context).colorScheme.primary,
+                    Theme.of(context).colorScheme.primary.withAlpha(150),
+                  ],
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                )
+               ),
+            ),
+            Center(
+              child: CircleAvatar(
+                radius: 40,
+                backgroundColor:
+                    Theme.of(context).colorScheme.onPrimary.withAlpha(50),
+                backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+                    ? NetworkImage(avatarUrl)
+                    : null,
+                child: (avatarUrl == null || avatarUrl.isEmpty)
+                    ? Text(
+                        fallbackLetter,
+                        style: TextStyle(
+                          fontSize: 40,
+                          color: Theme.of(context).colorScheme.onPrimary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileFormCard(BuildContext context, CustomerEntity? customer, bool isLoading) {
+    return Card(
+      elevation: 2.0,
+      clipBehavior: Clip.antiAlias,
+      child: Form(
+        key: _formKey,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('اطلاعات کاربری', style: Theme.of(context).textTheme.titleLarge),
+                  IconButton(
+                    icon: Icon(_isEditing ? Icons.close : Icons.edit_outlined),
+                    color: Theme.of(context).colorScheme.primary,
+                    onPressed: _onToggleEdit,
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _fullNameController,
+                    enabled: _isEditing,
+                    decoration: const InputDecoration(labelText: 'نام و نام خانوادگی'),
+                    validator: (value) => (value == null || value.isEmpty) ? 'نام اجباری است' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _phoneController,
+                    enabled: _isEditing,
+                    decoration: const InputDecoration(labelText: 'شماره تلفن'),
+                     validator: (value) => (value == null || value.isEmpty) ? 'تلفن اجباری است' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    initialValue: customer?.email ?? '',
+                    enabled: false,
+                    decoration: const InputDecoration(
+                      labelText: 'ایمیل (غیرقابل ویرایش)',
+                      suffixIcon: Icon(Icons.lock_outline, size: 16)
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  if (_isEditing)
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        icon: isLoading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.save),
+                        label: Text(isLoading ? 'در حال ذخیره...' : 'ذخیره تغییرات'),
+                        style: ElevatedButton.styleFrom(
+                           padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: isLoading ? null : _onSaveProfile,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+ Widget _buildActionsCard(BuildContext context) {
+    return Card(
+      elevation: 2.0,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+         children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text('مدیریت', style: Theme.of(context).textTheme.titleLarge),
+            ),
+            ListTile(
+              leading: const Icon(Icons.location_on_outlined),
+              title: const Text('آدرس‌های من'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.pushNamed(context, '/select-address');
+              },
+            ),
+            const Divider(height: 1, indent: 16, endIndent: 16),
+             ListTile(
+              leading: const Icon(Icons.history_outlined),
+              title: const Text('تاریخچه سفارشات'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                // TODO: Navigator.pushNamed(context, '/order-history');
+              },
+            ),
+         ],
+      )
+    );
+ }
+
+  Widget _buildLogoutButton(BuildContext context) {
+     return SizedBox(
+      width: double.infinity,
+      child: TextButton.icon(
+        icon: const Icon(Icons.logout),
+        label: const Text('خروج از حساب کاربری'),
+         style: TextButton.styleFrom(
+          foregroundColor: Theme.of(context).colorScheme.error,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+        onPressed: () {
+          // نمایش دیالوگ تایید خروج
+          showDialog(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('خروج از حساب'),
+              content: const Text('آیا برای خروج مطمئن هستید؟'),
+              actions: [
+                TextButton(
+                  child: const Text('لغو'),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
                 ),
-                const SizedBox(height: 32),
-                BlocBuilder<CustomerCubit, CustomerState>(
-                  builder: (context, state) {
-                    if (state is CustomerUpdating) {
-                      return const CircularProgressIndicator();
-                    }
-                    return ElevatedButton(
-                      onPressed: _submitForm,
-                      child: const Text('ذخیره تغییرات'),
-                    );
+                FilledButton(
+                  child: const Text('خروج'),
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop(); // بستن دیالوگ
+                    context.read<AuthCubit>().signOut(); // اجرای خروج
                   },
                 ),
               ],
             ),
+          );
+        },
+      ),
+    );
+  }
+
+   Widget _buildErrorView(BuildContext context, String message) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, color: Colors.red, size: 60),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Text(
+              'خطا در بارگذاری پروفایل: $message',
+              textAlign: TextAlign.center,
+            ),
           ),
-        ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () =>
+                context.read<CustomerCubit>().fetchCustomerDetails(),
+            child: const Text('تلاش مجدد'),
+          )
+        ],
       ),
     );
   }

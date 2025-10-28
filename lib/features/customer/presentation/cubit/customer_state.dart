@@ -4,7 +4,7 @@ abstract class CustomerState extends Equatable {
   const CustomerState();
 
   @override
-  List<Object> get props => [];
+  List<Object?> get props => [];
 }
 
 class CustomerInitial extends CustomerState {}
@@ -13,17 +13,44 @@ class CustomerLoading extends CustomerState {}
 
 class CustomerLoaded extends CustomerState {
   final CustomerEntity customer;
-  const CustomerLoaded(this.customer);
+
+  const CustomerLoaded({required this.customer});
+
   @override
-  List<Object> get props => [customer];
+  List<Object?> get props => [customer];
 }
 
 class CustomerError extends CustomerState {
   final String message;
-  const CustomerError(this.message);
+
+  const CustomerError({required this.message});
+
   @override
-  List<Object> get props => [message];
+  List<Object?> get props => [message];
 }
 
-// A state to show a loading indicator on the button while saving
-class CustomerUpdating extends CustomerState {}
+// State های زیر را اضافه کنید
+
+class CustomerAddressesLoading extends CustomerState {}
+
+class CustomerAddressesLoaded extends CustomerState {
+  final List<AddressEntity> addresses;
+
+  const CustomerAddressesLoaded({required this.addresses});
+
+  @override
+  List<Object?> get props => [addresses];
+}
+
+class CustomerAddressSaving extends CustomerState {}
+
+class CustomerAddressSaved extends CustomerState {}
+
+class CustomerAddressesError extends CustomerState {
+  final String message;
+
+  const CustomerAddressesError({required this.message});
+
+  @override
+  List<Object?> get props => [message];
+}

@@ -1,12 +1,12 @@
-// lib/main_shell.dart
-import 'package:customer_app/features/store/presentation/cubit/store_cubit.dart'; // <-- ۱. ایمپورت StoreCubit
+import 'package:customer_app/features/customer/presentation/cubit/customer_cubit.dart';
+import 'package:customer_app/features/store/presentation/cubit/store_cubit.dart'; 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'core/di/service_locator.dart';
 import 'features/cart/presentation/bloc/cart_bloc.dart';
 import 'features/cart/presentation/pages/cart_page.dart';
-import 'features/customer/presentation/cubit/customer_cubit.dart';
+
 import 'features/customer/presentation/pages/customer_profile_page.dart';
 import 'features/store/presentation/cubit/dashboard_cubit.dart';
 import 'features/store/presentation/pages/store_list_page.dart';
@@ -22,7 +22,7 @@ class _MainShellState extends State<MainShell> {
   int _selectedIndex = 0;
 
   static const List<Widget> _widgetOptions = <Widget>[
-    StoreListPage(), // صفحه اصلی ما
+    StoreListPage(), 
     CartPage(),
     CustomerProfilePage(),
   ];
@@ -35,25 +35,22 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    // ۲. ما Cubit های اصلی را اینجا فراهم می‌کنیم
     return MultiBlocProvider(
       providers: [
         BlocProvider(
           create: (context) => sl<DashboardCubit>()..fetchDashboardData(),
         ),
-     BlocProvider(
-                     create: (context) => sl<CustomerCubit>()..fetchCustomerDetails(),
-  ),
-        // --- ۳. این خط را اضافه کنید ---
-        BlocProvider(
-          create: (context) => sl<StoreCubit>(), // StoreCubit حالا فراهم شده
+        // **** اصلاح شد ****
+        // از .value استفاده میکنیم و Cubit سینگلتون را میخوانیم
+        // و همانجا متد fetch را صدا میزنیم
+        BlocProvider.value(
+          value: sl<CustomerCubit>()..fetchCustomerDetails(),
         ),
-        // ------------------------------
-        // CartBloc هم باید اینجا فراهم شود چون در صفحات مختلف نیاز است
+        // ------------------
         BlocProvider(
-          create: (context) => sl<CartBloc>()..add(CartStarted()),
-          lazy: false, // فوراً لود شود
+          create: (context) => sl<StoreCubit>(), 
         ),
+        // CartBloc نیازی به تکرار ندارد چون در MyApp فراهم شده است
       ],
       child: Scaffold(
         body: Center(

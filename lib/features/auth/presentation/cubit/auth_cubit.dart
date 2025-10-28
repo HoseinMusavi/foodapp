@@ -1,5 +1,3 @@
-// lib/features/auth/presentation/cubit/auth_cubit.dart
-
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -12,11 +10,12 @@ part 'auth_state.dart';
 class AuthCubit extends Cubit<AuthState> {
   final SignupUseCase signupUseCase;
   final LoginUseCase loginUseCase;
+  // دسترسی به کلاینت Supabase اضافه شد
+  final SupabaseClient _supabaseClient = Supabase.instance.client;
 
   AuthCubit({required this.signupUseCase, required this.loginUseCase})
-    : super(AuthInitial());
+      : super(AuthInitial());
 
-  // ... (signup method is unchanged)
   Future<void> signup({
     required String email,
     required String password,
@@ -57,5 +56,16 @@ class AuthCubit extends Cubit<AuthState> {
         emit(AuthSuccess(user: user));
       },
     );
+  }
+
+  // **** این متد اضافه شد ****
+  Future<void> signOut() async {
+    try {
+      await _supabaseClient.auth.signOut();
+      // AuthGate به صورت خودکار به صفحه Login هدایت میکند
+      emit(AuthInitial()); // بازگشت به حالت اولیه
+    } catch (e) {
+      emit(const AuthFailure(message: 'Failed to sign out'));
+    }
   }
 }
