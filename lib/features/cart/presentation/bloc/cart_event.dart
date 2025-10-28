@@ -9,38 +9,40 @@ abstract class CartEvent extends Equatable {
   List<Object> get props => [];
 }
 
-// رویداد برای شروع و دریافت وضعیت اولیه سبد خرید
 class CartStarted extends CartEvent {}
 
-// رویداد برای افزودن یک محصول به سبد خرید
 class CartProductAdded extends CartEvent {
   final ProductEntity product;
+  final List<OptionEntity> selectedOptions;
 
-  const CartProductAdded(this.product);
+  const CartProductAdded({
+    required this.product,
+    required this.selectedOptions,
+  });
 
   @override
-  List<Object> get props => [product];
+  List<Object> get props => [product, selectedOptions];
 }
 
-// رویداد برای حذف یک محصول از سبد خرید
 class CartProductRemoved extends CartEvent {
-  final ProductEntity product;
-
-  const CartProductRemoved(this.product);
+  // ✨ فیکس: از ProductEntity به cartItemId تغییر کرد
+  final int cartItemId;
+  const CartProductRemoved({required this.cartItemId});
 
   @override
-  List<Object> get props => [product];
+  List<Object> get props => [cartItemId];
 }
 
 class CartProductQuantityUpdated extends CartEvent {
-  final ProductEntity product;
+  // ✨ فیکس: از ProductEntity به cartItemId تغییر کرد
+  final int cartItemId;
   final int newQuantity;
 
   const CartProductQuantityUpdated({
-    required this.product,
+    required this.cartItemId,
     required this.newQuantity,
   });
 
   @override
-  List<Object> get props => [product, newQuantity];
+  List<Object> get props => [cartItemId, newQuantity];
 }

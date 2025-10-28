@@ -1,4 +1,5 @@
 // lib/features/product/data/models/product_model.dart
+
 import '../../domain/entities/product_entity.dart';
 
 class ProductModel extends ProductEntity {
@@ -8,32 +9,41 @@ class ProductModel extends ProductEntity {
     required super.name,
     required super.description,
     required super.price,
-    required super.discountPrice,
+    super.discountPrice,
     required super.imageUrl,
-    required super.isAvailable,
+    // ✨ --- فیکس نهایی خطا ---
+    // اضافه کردن مقدار پیش‌فرض برای پارامتر غیر-قابل-null
+    super.isAvailable = true,
     super.categoryId,
-    super.categoryName,
+    super.storeName,
   });
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
-    // این بخش برای زمانی است که جدول product_categories را JOIN می‌کنیم
-    String? catName;
-    if (json['product_categories'] != null &&
-        json['product_categories'] is Map) {
-      catName = json['product_categories']['name'] as String?;
-    }
-
     return ProductModel(
       id: json['id'] as int,
       storeId: json['store_id'] as int,
       name: json['name'] as String,
-      description: json['description'] as String? ?? '',
+      description: json['description'] as String,
       price: (json['price'] as num).toDouble(),
       discountPrice: (json['discount_price'] as num?)?.toDouble(),
-      imageUrl: json['image_url'] as String? ?? '',
-      categoryId: json['category_id'] as int?, // <-- تغییر
-      categoryName: catName, // <-- جدید: از JOIN خوانده می‌شود
+      imageUrl: json['image_url'] as String,
+      // این بخش از قبل درست بود و مقدار پیش‌فرض را مدیریت می‌کرد
       isAvailable: json['is_available'] as bool? ?? true,
+      categoryId: json['category_id'] as int?,
+      storeName: json['storeName'] as String?,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'store_id': storeId,
+      'name': name,
+      'description': description,
+      'price': price,
+      'discount_price': discountPrice,
+      'image_url': imageUrl,
+      'is_available': isAvailable,
+      'category_id': categoryId,
+    };
   }
 }

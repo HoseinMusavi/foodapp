@@ -1,13 +1,14 @@
 // lib/features/product/data/repositories/product_repository_impl.dart
+import 'package:customer_app/features/product/domain/entities/option_entity.dart';
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failure.dart';
 import '../../domain/entities/option_group_entity.dart';
-import '../../domain/entities/product_category_entity.dart';
+import '../../domain/entities/product_category_entity.dart'; // ایمپورت Entity
 import '../../domain/entities/product_entity.dart';
 import '../../domain/repositories/product_repository.dart';
 import '../datasources/product_remote_datasource.dart';
-// ایمپورت مدل‌ها برای تبدیل لازم است
+// ایمپورت مدل‌ها برای map کردن لازم است
 import '../models/product_category_model.dart';
 import '../models/product_model.dart';
 import '../models/option_group_model.dart';
@@ -24,11 +25,11 @@ class ProductRepositoryImpl implements ProductRepository {
   ) async {
     try {
       final productModels = await remoteDataSource.getProductsByStoreId(storeId);
-      // تبدیل ضمنی به Entity (چون ProductModel extends ProductEntity)
-      // برای اطمینان می‌توان صریحاً map کرد:
-      // final List<ProductEntity> productEntities = productModels.map((model) => model as ProductEntity).toList();
-      // return Right(productEntities);
-      return Right(productModels); // تبدیل ضمنی معمولاً کافی است
+      // تبدیل صریح برای اطمینان (هرچند ضمنی هم کار می‌کند)
+      final List<ProductEntity> productEntities = productModels
+          .map((model) => model as ProductEntity)
+          .toList();
+      return Right(productEntities);
     } on ServerException catch (e) {
       return Left(ServerFailure(message: e.message));
     } catch (e) {
@@ -42,13 +43,18 @@ class ProductRepositoryImpl implements ProductRepository {
     try {
       final categoryModels =
           await remoteDataSource.getProductCategories(storeId);
-      // --- ۱. تبدیل صریح Model به Entity ---
-      // این اطمینان حاصل می‌کند که نوع لیست دقیقاً List<ProductCategoryEntity> است
+      // --- *** مهم: تبدیل صریح Model به Entity *** ---
+      // این اطمینان می‌دهد که نوع لیست دقیقاً List<ProductCategoryEntity> است
       final List<ProductCategoryEntity> categoryEntities = categoryModels
-          .map((model) => model as ProductCategoryEntity) // هر مدل یک Entity هم هست
+          .map((model) => ProductCategoryEntity( // ساخت Entity جدید
+                 id: model.id,
+                 storeId: model.storeId,
+                 name: model.name,
+                 sortOrder: model.sortOrder,
+              ))
           .toList();
       return Right(categoryEntities);
-      // ------------------------------------
+      // ---------------------------------------------
     } on ServerException catch (e) {
       return Left(ServerFailure(message: e.message));
     } catch (e) {
@@ -61,11 +67,22 @@ class ProductRepositoryImpl implements ProductRepository {
       int productId) async {
     try {
       final optionGroupModels = await remoteDataSource.getProductOptions(productId);
-       // تبدیل ضمنی به Entity
-       // برای اطمینان می‌توان صریحاً map کرد:
-       // final List<OptionGroupEntity> optionGroupEntities = optionGroupModels.map((model) => model as OptionGroupEntity).toList();
-       // return Right(optionGroupEntities);
-      return Right(optionGroupModels); // تبدیل ضمنی معمولاً کافی است
+       // تبدیل صریح برای اطمینان
+       final List<OptionGroupEntity> optionGroupEntities = optionGroupModels
+           .map((model) => OptionGroupEntity( // ساخت Entity جدید
+                  id: model.id,
+                  storeId: model.storeId,
+                  name: model.name,
+                  // آپشن‌های داخلی هم باید Entity باشند
+                  options: model.options.map((optModel) => OptionEntity(
+                     id: optModel.id,
+                     optionGroupId: optModel.optionGroupId,
+                     name: optModel.name,
+                     priceDelta: optModel.priceDelta
+                  )).toList(),
+            ))
+           .toList();
+      return Right(optionGroupEntities);
     } on ServerException catch (e) {
       return Left(ServerFailure(message: e.message));
     } catch (e) {
