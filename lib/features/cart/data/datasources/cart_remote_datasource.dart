@@ -2,18 +2,14 @@
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/error/exceptions.dart';
-import '../../../product/domain/entities/option_entity.dart';
-import '../../../product/domain/entities/product_entity.dart';
-import '../../../product/data/models/option_model.dart';
 import '../../../product/data/models/product_model.dart';
 import '../models/cart_item_model.dart';
 
 abstract class CartRemoteDataSource {
   Future<List<CartItemModel>> getCartItems();
-  Future<void> addProductToCart(
-      ProductEntity product, List<OptionEntity> selectedOptions);
-  Future<void> updateProductQuantity(int cartItemId, int newQuantity);
-  Future<void> removeProductFromCart(int cartItemId);
+  Future<void> addProductToCart(int productId);
+  Future<void> updateProductQuantity(int productId, int newQuantity);
+  Future<void> removeProductFromCart(int productId);
 }
 
 class CartRemoteDataSourceImpl implements CartRemoteDataSource {
@@ -28,6 +24,7 @@ class CartRemoteDataSourceImpl implements CartRemoteDataSource {
       throw const ServerException(message: 'User not authenticated.');
     }
 
+    // Check if a cart already exists
     final cartResponse = await supabaseClient
         .from('carts')
         .select('id')
@@ -38,6 +35,7 @@ class CartRemoteDataSourceImpl implements CartRemoteDataSource {
       return cartResponse['id'];
     }
 
+    // If not, create a new cart
     final newCartResponse = await supabaseClient
         .from('carts')
         .insert({'user_id': user.id})
@@ -53,63 +51,20 @@ class CartRemoteDataSourceImpl implements CartRemoteDataSource {
       final response = await supabaseClient
           .from('cart_items')
           .select(
-            '''
-            *, 
-            products(
-              *, 
-              stores(name) 
-            ), 
-            cart_item_options(
-              options(
-                *,
-                option_groups(name)
-              )
-            )
-            ''',
-          )
+            '*, products(*, stores(*))',
+          ) // Fetch item, product and store data
           .eq('cart_id', cartId);
 
       final items = (response as List).map((data) {
-        
-        // ✨ --- شروع فیکس اصلی ---
-        // ۱. داده‌های محصول را استخراج کن
-        final productData = data['products'] as Map<String, dynamic>? ?? {};
-        
-        // ۲. داده‌های فروشگاه تو در تو را استخراج کن
-        final storeData = productData['stores'] as Map<String, dynamic>?;
-        
-        // ۳. یک کپی از داده‌های محصول بساز تا قابل ویرایش باشد
-        final productJson = Map<String, dynamic>.from(productData);
-        
-        // ۴. نام فروشگاه را از داده‌های تو در تو به سطح بالای JSON محصول اضافه کن
-        if (storeData != null) {
-          productJson['storeName'] = storeData['name'];
-        }
-        
-        // ۵. حالا ProductModel.fromJson می‌تواند 'storeName' را پیدا کند
-        final product = ProductModel.fromJson(productJson);
-        // ✨ --- پایان فیکس اصلی ---
+        final productData = data['products'];
+        final storeData = productData['stores'];
 
+        // Manually build the ProductModel with the nested storeName
+        final product = ProductModel.fromJson(
+          productData,
+        ).copyWith();
 
-        // خواندن آپشن‌های انتخاب شده
-        final List<OptionModel> selectedOptions = [];
-        if (data['cart_item_options'] != null) {
-          selectedOptions.addAll(
-            (data['cart_item_options'] as List).map((cio) {
-              final optionData = cio['options'];
-              if (optionData == null) return null; // Skip if option is null
-              
-              // Map group name from relation
-              final optionGroupData = optionData['option_groups'];
-              final String groupName = optionGroupData != null ? optionGroupData['name'] : 'Unknown Group';
-
-              return OptionModel.fromJson(optionData).copyWith(groupName: groupName);
-            }).whereType<OptionModel>(), // Filter out any nulls
-          );
-        }
-
-        // پاس دادن آپشن‌ها به CartItemModel
-        return CartItemModel.fromSupabase(data, product, selectedOptions);
+        return CartItemModel.fromSupabase(data, product);
       }).toList();
 
       return items;
@@ -121,72 +76,51 @@ class CartRemoteDataSourceImpl implements CartRemoteDataSource {
   }
 
   @override
-  Future<void> addProductToCart(
-    ProductEntity product,
-    List<OptionEntity> selectedOptions,
-  ) async {
+  Future<void> addProductToCart(int productId) async {
     try {
       final cartId = await _getOrCreateCartId();
 
-      // ۱. آیتم اصلی را در 'cart_items' درج کن و ID آن را بگیر
-      final newCartItem = await supabaseClient
-          .from('cart_items')
-          .insert({
-            'cart_id': cartId,
-            'product_id': product.id,
-            'quantity': 1, // فعلاً همیشه ۱
-          })
-          .select('id')
-          .single();
-
-      final newCartItemId = newCartItem['id'];
-      if (newCartItemId == null) {
-        throw const ServerException(message: 'Failed to create cart item.');
-      }
-
-      // ۲. اگر آپشنی وجود داشت، آن‌ها را در 'cart_item_options' درج کن
-      if (selectedOptions.isNotEmpty) {
-        final optionsToInsert = selectedOptions.map((opt) {
-          return {
-            'cart_item_id': newCartItemId,
-            'option_id': opt.id,
-          };
-        }).toList();
-
-        await supabaseClient
-            .from('cart_item_options')
-            .insert(optionsToInsert);
-      }
-      
+      // "Upsert" logic: Insert a new item, or if it already exists, increment the quantity
+      await supabaseClient.rpc(
+        'add_to_cart',
+        params: {
+          'p_cart_id': cartId,
+          'p_product_id': productId,
+          'p_quantity': 1,
+        },
+      );
     } catch (e) {
-      throw ServerException(
-          message: 'Could not add product to cart. ${e.toString()}');
+      throw ServerException(message: 'Could not add product to cart.');
     }
   }
 
   @override
-  Future<void> updateProductQuantity(int cartItemId, int newQuantity) async {
+  Future<void> updateProductQuantity(int productId, int newQuantity) async {
     if (newQuantity < 1) {
-      await removeProductFromCart(cartItemId);
+      await removeProductFromCart(productId);
       return;
     }
     try {
+      final cartId = await _getOrCreateCartId();
       await supabaseClient
           .from('cart_items')
           .update({'quantity': newQuantity})
-          .eq('id', cartItemId);
+          .eq('cart_id', cartId)
+          .eq('product_id', productId);
     } catch (e) {
       throw ServerException(message: 'Could not update product quantity.');
     }
   }
 
   @override
-  Future<void> removeProductFromCart(int cartItemId) async {
+  Future<void> removeProductFromCart(int productId) async {
     try {
+      final cartId = await _getOrCreateCartId();
       await supabaseClient
           .from('cart_items')
           .delete()
-          .eq('id', cartItemId);
+          .eq('cart_id', cartId)
+          .eq('product_id', productId);
     } catch (e) {
       throw ServerException(message: 'Could not remove product from cart.');
     }

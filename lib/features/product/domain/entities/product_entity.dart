@@ -1,23 +1,25 @@
 // lib/features/product/domain/entities/product_entity.dart
+
+
 import 'package:equatable/equatable.dart';
 
 class ProductEntity extends Equatable {
   final int id;
   final int storeId;
-  final String? storeName; // <-- *اطمینان از وجود این خط*
   final String name;
   final String description;
   final double price;
   final double? discountPrice;
   final String imageUrl;
-  final int? categoryId;
-  final String? categoryName;
+  final int? categoryId; // <-- جدید: جایگزین category شد
+  final String? categoryName; // <-- جدید: برای نمایش در UI
   final bool isAvailable;
+
+  // فیلد storeName حذف شد چون در مدل اصلی نبود
 
   const ProductEntity({
     required this.id,
     required this.storeId,
-    this.storeName, // <-- *اطمینان از وجود این خط*
     required this.name,
     required this.description,
     required this.price,
@@ -31,12 +33,12 @@ class ProductEntity extends Equatable {
   double get finalPrice => discountPrice ?? price;
 
   @override
-  List<Object?> get props => [id, storeId, name, categoryId, storeName]; // <-- *storeName باید در props باشد*
+  List<Object?> get props => [id, storeId, name, categoryId];
 
+  // ... متد copyWith ...
   ProductEntity copyWith({
     int? id,
     int? storeId,
-    String? storeName, // <-- *اطمینان از وجود این خط*
     String? name,
     String? description,
     double? price,
@@ -49,7 +51,6 @@ class ProductEntity extends Equatable {
     return ProductEntity(
       id: id ?? this.id,
       storeId: storeId ?? this.storeId,
-      storeName: storeName ?? this.storeName, // <-- *اطمینان از وجود این خط*
       name: name ?? this.name,
       description: description ?? this.description,
       price: price ?? this.price,

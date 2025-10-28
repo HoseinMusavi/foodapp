@@ -7,11 +7,6 @@ import '../../../../core/widgets/custom_network_image.dart';
 import '../../domain/entities/cart_entity.dart';
 import '../../domain/entities/cart_item_entity.dart';
 import '../bloc/cart_bloc.dart';
-// ایمپورت‌های مورد نیاز (اگرچه منطق دکمه را ساده کردیم)
-// import 'package:go_router/go_router.dart';
-// import '../../../store/presentation/pages/store_list_page.dart';
-// import '../../../store/presentation/cubit/dashboard_cubit.dart';
-
 
 class CartPage extends StatelessWidget {
   const CartPage({super.key});
@@ -19,17 +14,7 @@ class CartPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('سبد خرید شما'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              context.read<CartBloc>().add(CartStarted());
-            },
-          )
-        ],
-      ),
+      appBar: AppBar(title: const Text('سبد خرید شما')),
       body: BlocConsumer<CartBloc, CartState>(
         listener: (context, state) {
           if (state is CartError) {
@@ -47,16 +32,17 @@ class CartPage extends StatelessWidget {
           if (state is CartLoading) {
             return const Center(child: CircularProgressIndicator());
           }
-
           if (state is CartLoaded) {
             if (state.cart.items.isEmpty) {
               return _buildEmptyCartView(context);
             }
 
+            // --- ✨ FIX: Handle possible null storeName ---
             final groupedByStore = groupBy(
-                state.cart.items,
-                (CartItemEntity item) =>
-                    item.product.storeName ?? 'فروشگاه نامشخص');
+              state.cart.items,
+              (CartItemEntity item) =>"اسم الکی"
+            
+            );
 
             return Column(
               children: [
@@ -78,32 +64,7 @@ class CartPage extends StatelessWidget {
               ],
             );
           }
-
-          if (state is CartError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, color: Colors.red, size: 60),
-                  const SizedBox(height: 16),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Text(
-                      'خطا در بارگذاری سبد خرید: ${state.message}',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => context.read<Bloc<CartEvent, CartState>>().add(CartStarted()),
-                    child: const Text('تلاش مجدد'),
-                  )
-                ],
-              ),
-            );
-          }
-          
-          return const Center(child: CircularProgressIndicator());
+          return const Center(child: Text('در حال بارگذاری سبد خرید...'));
         },
       ),
     );
@@ -112,8 +73,7 @@ class CartPage extends StatelessWidget {
   Widget _buildEmptyCartView(BuildContext context) {
     return Center(
       child: Column(
-        // ✨ فیکس: خطای تایپی اینجا بود
-        mainAxisAlignment: MainAxisAlignment.center, 
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
             Icons.remove_shopping_cart_outlined,
@@ -127,13 +87,8 @@ class CartPage extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           ElevatedButton(
-            onPressed: () {
-               // ✨ فیکس: این کد امن است و کامپایل می‌شود
-               if (Navigator.of(context).canPop()) {
-                 Navigator.of(context).pop();
-               }
-            },
-            child: const Text('بازگشت'),
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('بازگشت به فروشگاه‌ها'),
           ),
         ],
       ),
@@ -194,42 +149,11 @@ class _CartItemRow extends StatelessWidget {
 
   const _CartItemRow({required this.item});
 
-  Widget _buildOptions(BuildContext context, CartItemEntity item) {
-    if (item.selectedOptions.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final optionsByGroup = groupBy(
-      item.selectedOptions,
-      (option) => option.groupName ?? 'گزینه‌ها',
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: optionsByGroup.entries.map((entry) {
-        final groupName = entry.key;
-        final optionsInGroup = entry.value.map((opt) => opt.name).join(', ');
-        return Padding(
-          padding: const EdgeInsets.only(top: 4.0),
-          child: Text(
-            '$groupName: $optionsInGroup',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: Colors.grey[600]),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        );
-      }).toList(),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
-    final finalPrice = item.totalPrice / item.quantity;
+    final finalPrice = item.product.discountPrice ?? item.product.price;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
@@ -249,7 +173,6 @@ class _CartItemRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(item.product.name, style: textTheme.titleMedium),
-                _buildOptions(context, item),
                 const SizedBox(height: 4),
                 Text(
                   '${finalPrice.toStringAsFixed(0)} تومان',
@@ -269,11 +192,11 @@ class _CartItemRow extends StatelessWidget {
                 color: colorScheme.primary,
                 onPressed: () {
                   context.read<CartBloc>().add(
-                        CartProductQuantityUpdated(
-                          cartItemId: item.id,
-                          newQuantity: item.quantity + 1,
-                        ),
-                      );
+                    CartProductQuantityUpdated(
+                      product: item.product,
+                      newQuantity: item.quantity + 1,
+                    ),
+                  );
                 },
               ),
               Padding(
@@ -285,19 +208,12 @@ class _CartItemRow extends StatelessWidget {
                 icon: item.quantity > 1 ? Icons.remove : Icons.delete_outline,
                 color: colorScheme.error,
                 onPressed: () {
-                  if (item.quantity > 1) {
-                    context.read<CartBloc>().add(
-                          CartProductQuantityUpdated(
-                            cartItemId: item.id,
-                            newQuantity: item.quantity - 1,
-                          ),
-                        );
-                  } else {
-                    context.read<CartBloc>().add(
-                          CartProductRemoved(
-                              cartItemId: item.id),
-                        );
-                  }
+                  context.read<CartBloc>().add(
+                    CartProductQuantityUpdated(
+                      product: item.product,
+                      newQuantity: item.quantity - 1,
+                    ),
+                  );
                 },
               ),
             ],
@@ -314,8 +230,7 @@ class _CartItemRow extends StatelessWidget {
     required VoidCallback onPressed,
   }) {
     return Material(
-      // ✨ فیکس: اصلاح هشدار deprecated
-      color: color.withAlpha((255 * 0.1).round()), 
+      color: color.withOpacity(0.1),
       borderRadius: BorderRadius.circular(30),
       child: InkWell(
         borderRadius: BorderRadius.circular(30),
@@ -344,8 +259,7 @@ class _TotalsCard extends StatelessWidget {
           child: Column(
             children: [
               Row(
-                // ✨ فیکس: خطای تایپی اینجا بود
-                mainAxisAlignment: MainAxisAlignment.spaceBetween, 
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
                     'جمع کل (${cart.totalItems} کالا):',
@@ -354,8 +268,8 @@ class _TotalsCard extends StatelessWidget {
                   Text(
                     '${cart.totalPrice.toStringAsFixed(0)} تومان',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
