@@ -1,7 +1,6 @@
 import 'package:collection/collection.dart';
 import 'package:customer_app/features/checkout/presentation/pages/checkout_summary_page.dart';
 import 'package:customer_app/features/customer/domain/entities/address_entity.dart';
-import 'package:customer_app/features/product/domain/entities/option_entity.dart';
 // import 'package:customer_app/features/product/domain/entities/product_entity.dart'; // Unused
 import 'package:flutter/material.dart'; // <-- Added import for TextDirection
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -141,16 +140,16 @@ class CartPage extends StatelessWidget {
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[500]),
           ),
           const SizedBox(height: 24),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.storefront_outlined),
-            label: const Text('مشاهده فروشگاه‌ها'),
-            onPressed: () {
-              // TODO: Navigate back to store list or home
-               if (Navigator.of(context).canPop()) {
-                 Navigator.of(context).pop();
-               }
-            },
-          ),
+          // ElevatedButton.icon(
+          //   icon: const Icon(Icons.storefront_outlined),
+          //   label: const Text('مشاهده فروشگاه‌ها'),
+          //   onPressed: () {
+          //     // TODO: Navigate back to store list or home
+          //      if (Navigator.of(context).canPop()) {
+          //        Navigator.of(context).pop();
+          //      }
+          //   },
+          // ),
         ],
       ),
     );

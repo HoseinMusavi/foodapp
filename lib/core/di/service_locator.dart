@@ -60,8 +60,18 @@ import '../../features/checkout/data/datasources/checkout_remote_datasource.dart
 import '../../features/checkout/data/repositories/checkout_repository_impl.dart';
 import '../../features/checkout/domain/repositories/checkout_repository.dart';
 import '../../features/checkout/presentation/cubit/checkout_cubit.dart';
-import '../../features/checkout/domain/usecases/place_order_usecase.dart'; // <-- Import UseCase
+import '../../features/checkout/domain/usecases/place_order_usecase.dart';
 
+// --- Order Feature ---
+import '../../features/order/data/datasources/order_remote_datasource.dart';
+import '../../features/order/data/repositories/order_repository_impl.dart';
+import '../../features/order/domain/repositories/order_repository.dart';
+import '../../features/order/domain/usecases/get_order_updates_usecase.dart';
+import '../../features/order/presentation/cubit/order_tracking_cubit.dart';
+import '../../features/order/domain/usecases/get_my_orders_usecase.dart';
+import '../../features/order/presentation/cubit/order_history_cubit.dart';
+import '../../features/order/domain/usecases/get_order_details_usecase.dart'; // <-- ایمپورت شده
+// ---
 
 final sl = GetIt.instance;
 
@@ -168,10 +178,9 @@ Future<void> init() async {
 
   // --- Checkout ---
   sl.registerFactory(
-    // **** Corrected parameter name here ****
     () => CheckoutCubit(placeOrderUsecase: sl()),
   );
-  sl.registerLazySingleton(() => PlaceOrderUsecase(sl())); // Register the use case
+  sl.registerLazySingleton(() => PlaceOrderUsecase(sl()));
   sl.registerLazySingleton<CheckoutRepository>(
     () => CheckoutRepositoryImpl(remoteDataSource: sl()),
   );
@@ -179,6 +188,28 @@ Future<void> init() async {
     () => CheckoutRemoteDataSourceImpl(supabaseClient: sl()),
   );
   // --- End Checkout ---
+
+  // ========== Order Feature ==========
+  // Cubit
+  sl.registerFactory(() => OrderTrackingCubit(
+        getOrderUpdatesUsecase: sl(),
+        getOrderDetailsUsecase: sl(), // <-- ** اصلاح شد **
+      ));
+  sl.registerFactory(() => OrderHistoryCubit(getMyOrdersUsecase: sl()));
+
+  // UseCases
+  sl.registerLazySingleton(() => GetOrderUpdatesUsecase(sl()));
+  sl.registerLazySingleton(() => GetMyOrdersUsecase(sl()));
+  sl.registerLazySingleton(() => GetOrderDetailsUsecase(sl()));
+
+  // Repository
+  sl.registerLazySingleton<OrderRepository>(
+      () => OrderRepositoryImpl(remoteDatasource: sl()));
+
+  // Datasource
+  sl.registerLazySingleton<OrderRemoteDatasource>(
+      () => OrderRemoteDataSourceImpl(supabaseClient: sl()));
+  // --- End Order ---
 
   // #endregion
 }
