@@ -11,13 +11,17 @@ class CustomerProfilePage extends StatefulWidget {
   State<CustomerProfilePage> createState() => _CustomerProfilePageState();
 }
 
-class _CustomerProfilePageState extends State<CustomerProfilePage> {
+class _CustomerProfilePageState extends State<CustomerProfilePage>
+    with AutomaticKeepAliveClientMixin {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _fullNameController;
   late TextEditingController _phoneController;
 
   CustomerEntity? _currentCustomer;
   bool _isEditing = false;
+
+  @override
+  bool get wantKeepAlive => true; // ✅ جلوگیری از ری‌بیلد هنگام تعویض تب‌ها
 
   @override
   void initState() {
@@ -44,101 +48,80 @@ class _CustomerProfilePageState extends State<CustomerProfilePage> {
     _phoneController.text = customer.phone;
   }
 
-  void _onToggleEdit() {
-    setState(() {
-      _isEditing = !_isEditing;
-      // اگر در حال لغو ویرایش بودیم، مقادیر را ریست کن
-      if (!_isEditing && _currentCustomer != null) {
-        _updateControllers(_currentCustomer!);
-      }
-    });
+  void _toggleEdit() {
+    setState(() => _isEditing = !_isEditing);
   }
 
-  void _onSaveProfile() {
+  void _saveProfile() {
     if (_formKey.currentState!.validate() && _currentCustomer != null) {
       final updatedCustomer = CustomerEntity(
         id: _currentCustomer!.id,
-        email: _currentCustomer!.email, // ایمیل قابل ویرایش نیست
+        email: _currentCustomer!.email,
         fullName: _fullNameController.text,
         phone: _phoneController.text,
         avatarUrl: _currentCustomer!.avatarUrl,
         defaultAddressId: _currentCustomer!.defaultAddressId,
       );
       context.read<CustomerCubit>().updateCustomer(updatedCustomer);
-      setState(() {
-        _isEditing = false; // خروج از حالت ویرایش پس از ذخیره
-      });
+      setState(() => _isEditing = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+
     return Scaffold(
       body: BlocConsumer<CustomerCubit, CustomerState>(
         listener: (context, state) {
+          if (state is CustomerLoaded) {
+            _currentCustomer = state.customer;
+            _updateControllers(state.customer);
+          }
           if (state is CustomerError) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                  content: Text('خطا: ${state.message}'),
-                  backgroundColor: Colors.red),
+                content: Text(state.message),
+                backgroundColor: Colors.red,
+              ),
             );
-          }
-          if (state is CustomerLoaded) {
-            final currentState = context.read<CustomerCubit>().state;
-            if (currentState is! CustomerLoading) {
-              _updateControllers(state.customer);
-              _currentCustomer = state.customer;
-              // فقط اگر در حال ویرایش نبودیم اسنک بار نشان بده
-              if (!_isEditing) {
-                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('پروفایل با موفقیت به‌روزرسانی شد'),
-                      backgroundColor: Colors.green),
-                );
-              }
-            }
           }
         },
         builder: (context, state) {
           if (state is CustomerInitial) {
             context.read<CustomerCubit>().fetchCustomerDetails();
-          }
-
-          if (state is CustomerLoading && _currentCustomer == null) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (state is CustomerError && _currentCustomer == null) {
-            return _buildErrorView(context, state.message);
-          }
+          final customer =
+              (state is CustomerLoaded) ? state.customer : _currentCustomer;
 
-          // اگر در حال لودینگ بودیم ولی داده داشتیم، UI را با لودر نشان بده
-          final customer = (state is CustomerLoaded) ? state.customer : _currentCustomer;
-          final bool isLoading = (state is CustomerLoading);
+          if (customer == null) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
           return RefreshIndicator(
             onRefresh: () async {
-               context.read<CustomerCubit>().fetchCustomerDetails();
+              context.read<CustomerCubit>().fetchCustomerDetails();
             },
-            child: CustomScrollView(
-              slivers: [
-                _buildAppBar(context, customer),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildProfileFormCard(context, customer, isLoading),
-                        const SizedBox(height: 24),
-                        _buildActionsCard(context),
-                        const SizedBox(height: 24),
-                        _buildLogoutButton(context),
-                      ],
-                    ),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
+                children: [
+                  _buildHeader(context, customer),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 400),
+                    transitionBuilder: (child, animation) =>
+                        FadeTransition(opacity: animation, child: child),
+                    child: _isEditing
+                        ? _buildEditableForm(context, customer)
+                        : _buildReadOnlyProfile(context, customer),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  _buildLogoutButton(context),
+                  const SizedBox(height: 32),
+                ],
+              ),
             ),
           );
         },
@@ -146,176 +129,186 @@ class _CustomerProfilePageState extends State<CustomerProfilePage> {
     );
   }
 
-  Widget _buildAppBar(BuildContext context, CustomerEntity? customer) {
-    final avatarUrl = customer?.avatarUrl;
-    final fullName = customer?.fullName ?? '...';
-    final fallbackLetter = fullName.isNotEmpty ? fullName[0].toUpperCase() : 'U';
+  Widget _buildHeader(BuildContext context, CustomerEntity customer) {
+    final theme = Theme.of(context);
+    final avatarUrl = customer.avatarUrl;
+    final fallbackLetter = customer.fullName.isNotEmpty
+        ? customer.fullName[0].toUpperCase()
+        : 'U';
 
-    return SliverAppBar(
-      expandedHeight: 200.0,
-      floating: false,
-      pinned: true,
-      backgroundColor: Theme.of(context).colorScheme.primary,
-      foregroundColor: Theme.of(context).colorScheme.onPrimary,
-      flexibleSpace: FlexibleSpaceBar(
-        title: Text(fullName, style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
-        centerTitle: true,
-        background: Stack(
-          fit: StackFit.expand,
-          children: [
-            Container(
-               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Theme.of(context).colorScheme.primary,
-                    Theme.of(context).colorScheme.primary.withAlpha(150),
-                  ],
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                )
-               ),
-            ),
-            Center(
-              child: CircleAvatar(
-                radius: 40,
-                backgroundColor:
-                    Theme.of(context).colorScheme.onPrimary.withAlpha(50),
-                backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
-                    ? NetworkImage(avatarUrl)
-                    : null,
-                child: (avatarUrl == null || avatarUrl.isEmpty)
-                    ? Text(
-                        fallbackLetter,
-                        style: TextStyle(
-                          fontSize: 40,
-                          color: Theme.of(context).colorScheme.onPrimary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      )
-                    : null,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.only(top: 60, bottom: 30),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            theme.colorScheme.primary,
+            theme.colorScheme.primary.withOpacity(0.8),
+          ],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        borderRadius: const BorderRadius.vertical(
+          bottom: Radius.circular(40),
+        ),
+      ),
+      child: Column(
+        children: [
+          CircleAvatar(
+            radius: 48,
+            backgroundImage:
+                (avatarUrl != null && avatarUrl.isNotEmpty) ? NetworkImage(avatarUrl) : null,
+            backgroundColor: theme.colorScheme.onPrimary.withOpacity(0.1),
+            child: (avatarUrl == null || avatarUrl.isEmpty)
+                ? Text(
+                    fallbackLetter,
+                    style: TextStyle(
+                      fontSize: 40,
+                      color: theme.colorScheme.onPrimary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            customer.fullName,
+            style: theme.textTheme.headlineSmall
+                ?.copyWith(color: theme.colorScheme.onPrimary),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            customer.email,
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(color: theme.colorScheme.onPrimary.withOpacity(0.8)),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            icon: Icon(_isEditing ? Icons.close : Icons.edit),
+            label: Text(_isEditing ? "انصراف" : "ویرایش پروفایل"),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.colorScheme.onPrimary,
+              foregroundColor: theme.colorScheme.primary,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
               ),
             ),
-          ],
+            onPressed: _toggleEdit,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReadOnlyProfile(BuildContext context, CustomerEntity customer) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Card(
+        elevation: 3,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              _infoRow(Icons.person_outline, "نام و نام خانوادگی", customer.fullName),
+              const Divider(),
+              _infoRow(Icons.phone_outlined, "شماره تلفن", customer.phone),
+              const Divider(),
+              _infoRow(Icons.email_outlined, "ایمیل", customer.email),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildProfileFormCard(BuildContext context, CustomerEntity? customer, bool isLoading) {
-    return Card(
-      elevation: 2.0,
-      clipBehavior: Clip.antiAlias,
+  Widget _buildEditableForm(BuildContext context, CustomerEntity customer) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
       child: Form(
         key: _formKey,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('اطلاعات کاربری', style: Theme.of(context).textTheme.titleLarge),
-                  IconButton(
-                    icon: Icon(_isEditing ? Icons.close : Icons.edit_outlined),
-                    color: Theme.of(context).colorScheme.primary,
-                    onPressed: _onToggleEdit,
+        child: Card(
+          elevation: 3,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                TextFormField(
+                  controller: _fullNameController,
+                  decoration: const InputDecoration(
+                    labelText: "نام و نام خانوادگی",
+                    prefixIcon: Icon(Icons.person_outline),
                   ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  TextFormField(
-                    controller: _fullNameController,
-                    enabled: _isEditing,
-                    decoration: const InputDecoration(labelText: 'نام و نام خانوادگی'),
-                    validator: (value) => (value == null || value.isEmpty) ? 'نام اجباری است' : null,
+                  validator: (v) => v == null || v.isEmpty ? 'نام الزامی است' : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _phoneController,
+                  decoration: const InputDecoration(
+                    labelText: "شماره تلفن",
+                    prefixIcon: Icon(Icons.phone_outlined),
                   ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _phoneController,
-                    enabled: _isEditing,
-                    decoration: const InputDecoration(labelText: 'شماره تلفن'),
-                     validator: (value) => (value == null || value.isEmpty) ? 'تلفن اجباری است' : null,
+                  validator: (v) => v == null || v.isEmpty ? 'شماره الزامی است' : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  initialValue: customer.email,
+                  enabled: false,
+                  decoration: const InputDecoration(
+                    labelText: "ایمیل (غیرقابل ویرایش)",
+                    prefixIcon: Icon(Icons.email_outlined),
+                    suffixIcon: Icon(Icons.lock_outline, size: 18),
                   ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    initialValue: customer?.email ?? '',
-                    enabled: false,
-                    decoration: const InputDecoration(
-                      labelText: 'ایمیل (غیرقابل ویرایش)',
-                      suffixIcon: Icon(Icons.lock_outline, size: 16)
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  if (_isEditing)
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        icon: isLoading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.save),
-                        label: Text(isLoading ? 'در حال ذخیره...' : 'ذخیره تغییرات'),
-                        style: ElevatedButton.styleFrom(
-                           padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        onPressed: isLoading ? null : _onSaveProfile,
+                ),
+                const SizedBox(height: 24),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.save),
+                    label: const Text("ذخیره تغییرات"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: theme.colorScheme.primary,
+                      foregroundColor: theme.colorScheme.onPrimary,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                ],
-              ),
+                    onPressed: _saveProfile,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
- Widget _buildActionsCard(BuildContext context) {
-    return Card(
-      elevation: 2.0,
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-         children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text('مدیریت', style: Theme.of(context).textTheme.titleLarge),
-            ),
-            ListTile(
-              leading: const Icon(Icons.location_on_outlined),
-              title: const Text('آدرس‌های من'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.pushNamed(context, '/select-address');
-              },
-            ),
-            const Divider(height: 1, indent: 16, endIndent: 16),
-             ListTile(
-              leading: const Icon(Icons.history_outlined),
-              title: const Text('تاریخچه سفارشات'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                // TODO: Navigator.pushNamed(context, '/order-history');
-              },
-            ),
-         ],
-      )
+  Widget _infoRow(IconData icon, String label, String value) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(label),
+      subtitle: Text(value),
+      dense: true,
     );
- }
+  }
 
   Widget _buildLogoutButton(BuildContext context) {
-     return SizedBox(
-      width: double.infinity,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32.0),
       child: TextButton.icon(
         icon: const Icon(Icons.logout),
-        label: const Text('خروج از حساب کاربری'),
-         style: TextButton.styleFrom(
+        label: const Text("خروج از حساب کاربری"),
+        style: TextButton.styleFrom(
           foregroundColor: Theme.of(context).colorScheme.error,
           padding: const EdgeInsets.symmetric(vertical: 12),
         ),
         onPressed: () {
-          // نمایش دیالوگ تایید خروج
           showDialog(
             context: context,
             builder: (dialogContext) => AlertDialog(
@@ -329,39 +322,14 @@ class _CustomerProfilePageState extends State<CustomerProfilePage> {
                 FilledButton(
                   child: const Text('خروج'),
                   onPressed: () {
-                    Navigator.of(dialogContext).pop(); // بستن دیالوگ
-                    context.read<AuthCubit>().signOut(); // اجرای خروج
+                    Navigator.of(dialogContext).pop();
+                    context.read<AuthCubit>().signOut();
                   },
                 ),
               ],
             ),
           );
         },
-      ),
-    );
-  }
-
-   Widget _buildErrorView(BuildContext context, String message) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.error_outline, color: Colors.red, size: 60),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Text(
-              'خطا در بارگذاری پروفایل: $message',
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: () =>
-                context.read<CustomerCubit>().fetchCustomerDetails(),
-            child: const Text('تلاش مجدد'),
-          )
-        ],
       ),
     );
   }
