@@ -1,10 +1,11 @@
-// lib/features/product/domain/entities/product_entity.dart
+
+
 import 'package:equatable/equatable.dart';
 
 class ProductEntity extends Equatable {
   final int id;
   final int storeId;
-  final String? storeName; // <-- *اطمینان از وجود این خط*
+  final String? storeName; // <-- ۱. اضافه شد
   final String name;
   final String description;
   final double price;
@@ -17,7 +18,7 @@ class ProductEntity extends Equatable {
   const ProductEntity({
     required this.id,
     required this.storeId,
-    this.storeName, // <-- *اطمینان از وجود این خط*
+    this.storeName, // <-- ۲. اضافه شد
     required this.name,
     required this.description,
     required this.price,
@@ -31,25 +32,25 @@ class ProductEntity extends Equatable {
   double get finalPrice => discountPrice ?? price;
 
   @override
-  List<Object?> get props => [id, storeId, name, categoryId, storeName]; // <-- *storeName باید در props باشد*
+  List<Object?> get props => [id, storeId, name, categoryId, storeName]; // <-- ۳. اضافه شد
 
+  // متد copyWith شما از قبل `storeName` را داشت که عالی است
   ProductEntity copyWith({
-    int? id,
-    int? storeId,
-    String? storeName, // <-- *اطمینان از وجود این خط*
-    String? name,
-    String? description,
-    double? price,
-    double? discountPrice,
-    String? imageUrl,
-    int? categoryId,
-    String? categoryName,
-    bool? isAvailable,
-  }) {
+      int? id,
+      int? storeId,
+      String? storeName,
+      String? name,
+      String? description,
+      double? price,
+      double? discountPrice,
+      String? imageUrl,
+      int? categoryId,
+      String? categoryName,
+      bool? isAvailable}) {
     return ProductEntity(
       id: id ?? this.id,
       storeId: storeId ?? this.storeId,
-      storeName: storeName ?? this.storeName, // <-- *اطمینان از وجود این خط*
+      storeName: storeName ?? this.storeName, // <-- اطمینان از وجود
       name: name ?? this.name,
       description: description ?? this.description,
       price: price ?? this.price,

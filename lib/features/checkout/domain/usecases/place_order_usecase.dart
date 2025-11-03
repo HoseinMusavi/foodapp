@@ -1,29 +1,40 @@
-// lib/features/checkout/domain/usecases/place_order_usecase.dart
-
+import 'package:customer_app/core/error/failure.dart';
+import 'package:customer_app/core/usecase/usecase.dart';
+import 'package:customer_app/features/checkout/domain/repositories/checkout_repository.dart';
+import 'package:customer_app/features/customer/domain/entities/address_entity.dart';
+// import 'package:customer_app/features/checkout/domain/entities/order_entity.dart'; // این احتمالا لازم نیست
 import 'package:dartz/dartz.dart';
 import 'package:equatable/equatable.dart';
-import '../../../../core/error/failure.dart';
-import '../../../../core/usecase/usecase.dart';
-import '../../../cart/domain/entities/cart_entity.dart';
-import '../entities/order_entity.dart';
-import '../repositories/checkout_repository.dart';
 
-class PlaceOrderUsecase implements UseCase<OrderEntity, PlaceOrderParams> {
+// Use case for placing an order
+// It returns the order ID (int) on success
+class PlaceOrderUsecase extends UseCase<int, PlaceOrderParams> { // <-- نوع برگشتی اصلاح شد به int
   final CheckoutRepository repository;
 
   PlaceOrderUsecase(this.repository);
 
   @override
-  Future<Either<Failure, OrderEntity>> call(PlaceOrderParams params) async {
-    return await repository.placeOrder(params.cart);
+  Future<Either<Failure, int>> call(PlaceOrderParams params) async { // <-- نوع برگشتی اصلاح شد به int
+    return await repository.placeOrder( // <-- فراخوانی متد ریپازیتوری
+      address: params.address,
+      couponCode: params.couponCode,
+      notes: params.notes,
+    );
   }
 }
 
+// Parameters required for placing an order
 class PlaceOrderParams extends Equatable {
-  final CartEntity cart;
+  final AddressEntity address;
+  final String? couponCode;
+  final String? notes;
 
-  const PlaceOrderParams({required this.cart});
+  const PlaceOrderParams({
+    required this.address,
+    this.couponCode,
+    this.notes,
+  });
 
   @override
-  List<Object> get props => [cart];
+  List<Object?> get props => [address, couponCode, notes];
 }

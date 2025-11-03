@@ -1,87 +1,72 @@
-import 'dart:io';
 import 'package:bloc/bloc.dart';
+import 'package:customer_app/core/error/failure.dart'; //
+import 'package:customer_app/core/usecase/usecase.dart';
+import 'package:customer_app/features/customer/domain/entities/address_entity.dart';
+import 'package:customer_app/features/customer/domain/entities/customer_entity.dart';
+import 'package:customer_app/features/customer/domain/usecases/add_address_usecase.dart';
+import 'package:customer_app/features/customer/domain/usecases/get_addresses_usecase.dart';
+import 'package:customer_app/features/customer/domain/usecases/get_customer_details.dart';
+import 'package:customer_app/features/customer/domain/usecases/update_customer_profile.dart';
 import 'package:equatable/equatable.dart';
-import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../../core/usecase/usecase.dart';
-import '../../domain/entities/customer_entity.dart';
-import '../../domain/usecases/get_customer_details.dart';
-import '../../domain/usecases/update_customer_profile.dart';
 
 part 'customer_state.dart';
 
 class CustomerCubit extends Cubit<CustomerState> {
-  final GetCustomerDetails getCustomerDetailsUseCase;
-  final UpdateCustomerProfile updateCustomerProfileUseCase;
+  final GetCustomerDetails getCustomerDetailsUsecase;
+  final UpdateCustomerProfile updateCustomerProfileUsecase;
+  final GetAddressesUsecase getAddressesUsecase;
+  final AddAddressUsecase addAddressUsecase;
 
   CustomerCubit({
-    required this.getCustomerDetailsUseCase,
-    required this.updateCustomerProfileUseCase,
+    required this.getCustomerDetailsUsecase,
+    required this.updateCustomerProfileUsecase,
+    required this.getAddressesUsecase,
+    required this.addAddressUsecase,
   }) : super(CustomerInitial());
 
-  Future<void> fetchCustomerDetails() async {
-    debugPrint("✅ [Cubit] -> fetchCustomerDetails: Starting to get profile information.");
-    emit(CustomerLoading());
-    final failureOrCustomer = await getCustomerDetailsUseCase(NoParams());
+  // تابع کمکی برای مدیریت پیام خطا
+  String _mapFailureToMessage(Failure failure) {
+    if (failure is ServerFailure) {
+      return failure.message;
+    }
+    return 'یک خطای ناشناخته رخ داد';
+  }
 
+  Future<void> fetchCustomerDetails() async {
+    emit(CustomerLoading());
+    final failureOrCustomer = await getCustomerDetailsUsecase(NoParams());
     failureOrCustomer.fold(
-      (failure) {
-        debugPrint("❌ [Cubit] -> fetchCustomerDetails: Information retrieval failed. Error: ${failure.toString()}");
-        emit(CustomerError(failure.toString()));
-      },
-      (customer) {
-        debugPrint("✅ [Cubit] -> fetchCustomerDetails: Information received successfully. Displaying profile.");
-        emit(CustomerLoaded(customer));
-      },
+      (failure) => emit(CustomerError(message: _mapFailureToMessage(failure))), // اصلاح شد
+      (customer) => emit(CustomerLoaded(customer: customer)),
     );
   }
 
-  Future<void> saveProfile({
-    required String fullName,
-    required String phone,
-    File? imageFile,
-  }) async {
-    debugPrint("✅ [Cubit] -> saveProfile: Starting profile save operation.");
-    emit(CustomerUpdating());
-
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) {
-      emit(const CustomerError('User not authenticated'));
-      return;
-    }
-
-    String? currentAvatarUrl;
-    int? currentDefaultAddressId;
-    final currentState = state;
-    if (currentState is CustomerLoaded) {
-      currentAvatarUrl = currentState.customer.avatarUrl;
-      currentDefaultAddressId = currentState.customer.defaultAddressId;
-    }
-
-    final customerData = CustomerEntity(
-      id: user.id,
-      fullName: fullName,
-      email: user.email ?? '',
-      phone: phone,
-      avatarUrl: currentAvatarUrl,
-      defaultAddressId: currentDefaultAddressId,
+  Future<void> updateCustomer(CustomerEntity customer) async {
+    emit(CustomerLoading());
+    // پارامتر customer مستقیما پاس داده شد (مطابق با UseCase اصلاح شده)
+    final failureOrUpdatedCustomer =
+        await updateCustomerProfileUsecase(customer); 
+    failureOrUpdatedCustomer.fold(
+      (failure) => emit(CustomerError(message: _mapFailureToMessage(failure))), // اصلاح شد
+      (customer) => emit(CustomerLoaded(customer: customer)),
     );
+  }
 
-    final params = UpdateCustomerParams(
-      customer: customerData,
-      imageFile: imageFile,
+  Future<void> getAddresses() async {
+    emit(CustomerAddressesLoading());
+    final failureOrAddresses = await getAddressesUsecase(NoParams());
+    failureOrAddresses.fold(
+      (failure) => emit(CustomerAddressesError(message: _mapFailureToMessage(failure))), // اصلاح شد
+      (addresses) => emit(CustomerAddressesLoaded(addresses: addresses)),
     );
-    final failureOrSuccess = await updateCustomerProfileUseCase(params);
+  }
 
+  Future<void> saveAddress(AddressEntity address) async {
+    emit(CustomerAddressSaving());
+    final failureOrSuccess = await addAddressUsecase(address);
     failureOrSuccess.fold(
-      (failure) {
-        debugPrint("❌ [Cubit] -> saveProfile: Save failed. Error: ${failure.toString()}");
-        emit(CustomerError(failure.toString()));
-      },
-      (updatedCustomer) {
-        debugPrint("✅ [Cubit] -> saveProfile: Save successful. Displaying new profile.");
-        emit(CustomerLoaded(updatedCustomer));
-      },
+      (failure) => emit(CustomerAddressesError(message: _mapFailureToMessage(failure))), // اصلاح شد
+      (_) => emit(CustomerAddressSaved()),
     );
   }
 }

@@ -1,24 +1,35 @@
-// lib/features/customer/domain/entities/address_entity.dart
 import 'package:equatable/equatable.dart';
-import '../../../../core/utils/lat_lng.dart'; // <-- ایمپورت کلاس جدید
 
 class AddressEntity extends Equatable {
-  final int id;
+  final int? id;
+  final String customerId; // این خط را اضافه کنید
   final String title;
   final String fullAddress;
-  final String? postalCode; // <-- تغییر: اختیاری شد
-  final String? city;       // <-- تغییر: اختیاری شد
-  final LatLng? location;   // <-- جدید: موقعیت مکانی
+  final String? postalCode;
+  final String? city;
+  final double latitude;
+  final double longitude;
 
   const AddressEntity({
-    required this.id,
+    this.id,
+    required this.customerId, // این خط را اضافه کنید
     required this.title,
     required this.fullAddress,
     this.postalCode,
     this.city,
-    this.location,
+    required this.latitude,
+    required this.longitude,
   });
 
   @override
-  List<Object?> get props => [id, title, fullAddress, postalCode, city, location];
+  List<Object?> get props => [
+        id,
+        customerId, // این خط را اضافه کنید
+        title,
+        fullAddress,
+        postalCode,
+        city,
+        latitude,
+        longitude
+      ];
 }

@@ -33,12 +33,14 @@ import '../../features/customer/domain/repositories/customer_repository.dart';
 import '../../features/customer/domain/usecases/get_customer_details.dart';
 import '../../features/customer/domain/usecases/update_customer_profile.dart';
 import '../../features/customer/presentation/cubit/customer_cubit.dart';
+import '../../features/customer/domain/usecases/get_addresses_usecase.dart';
+import '../../features/customer/domain/usecases/add_address_usecase.dart';
 
 // --- Product Feature ---
 import '../../features/product/data/repositories/product_repository_impl.dart';
 import '../../features/product/domain/repositories/product_repository.dart';
-import '../../features/product/domain/usecases/get_product_categories_usecase.dart'; // <-- ایمپورت
-import '../../features/product/domain/usecases/get_product_options_usecase.dart';    // <-- ایمپورت
+import '../../features/product/domain/usecases/get_product_categories_usecase.dart';
+import '../../features/product/domain/usecases/get_product_options_usecase.dart';
 import '../../features/product/domain/usecases/get_products_by_store_usecase.dart';
 import '../../features/product/presentation/cubit/product_cubit.dart';
 
@@ -51,7 +53,27 @@ import '../../features/store/data/repositories/store_repository_impl.dart';
 import '../../features/store/domain/repositories/store_repository.dart';
 import '../../features/store/domain/usecases/get_stores_usecase.dart';
 import '../../features/store/presentation/cubit/dashboard_cubit.dart';
-import '../../features/store/presentation/cubit/store_cubit.dart'; // <-- !! ایمپورت StoreCubit !!
+import '../../features/store/presentation/cubit/store_cubit.dart';
+
+// --- Checkout Feature ---
+import '../../features/checkout/data/datasources/checkout_remote_datasource.dart';
+import '../../features/checkout/data/repositories/checkout_repository_impl.dart';
+import '../../features/checkout/domain/repositories/checkout_repository.dart';
+import '../../features/checkout/presentation/cubit/checkout_cubit.dart';
+import '../../features/checkout/domain/usecases/place_order_usecase.dart';
+// --- ** ایمپورت یوزکیس جدید ** ---
+import '../../features/checkout/domain/usecases/validate_coupon_usecase.dart';
+
+// --- Order Feature ---
+import '../../features/order/data/datasources/order_remote_datasource.dart';
+import '../../features/order/data/repositories/order_repository_impl.dart';
+import '../../features/order/domain/repositories/order_repository.dart';
+import '../../features/order/domain/usecases/get_order_updates_usecase.dart';
+import '../../features/order/presentation/cubit/order_tracking_cubit.dart';
+import '../../features/order/domain/usecases/get_my_orders_usecase.dart';
+import '../../features/order/presentation/cubit/order_history_cubit.dart';
+import '../../features/order/domain/usecases/get_order_details_usecase.dart';
+// ---
 
 final sl = GetIt.instance;
 
@@ -80,9 +102,7 @@ Future<void> init() async {
   sl.registerFactory(
     () => DashboardCubit(getStoresUsecase: sl(), getPromotionsUsecase: sl()),
   );
-  // --- !!! این خط اضافه شد !!! ---
   sl.registerFactory(() => StoreCubit(getStoresUsecase: sl()));
-  // ------------------------------
   sl.registerLazySingleton(() => GetStoresUsecase(sl()));
   sl.registerLazySingleton<StoreRepository>(
     () => StoreRepositoryImpl(remoteDataSource: sl()),
@@ -92,14 +112,18 @@ Future<void> init() async {
   );
 
   // --- Customer ---
-  sl.registerFactory(
+  sl.registerLazySingleton(
     () => CustomerCubit(
-      getCustomerDetailsUseCase: sl(), // نام صحیح getCustomerDetailsUseCase است
-      updateCustomerProfileUseCase: sl(),
+      getCustomerDetailsUsecase: sl(),
+      updateCustomerProfileUsecase: sl(),
+      getAddressesUsecase: sl(),
+      addAddressUsecase: sl(),
     ),
   );
   sl.registerLazySingleton(() => GetCustomerDetails(sl()));
   sl.registerLazySingleton(() => UpdateCustomerProfile(sl()));
+  sl.registerLazySingleton(() => GetAddressesUsecase(sl()));
+  sl.registerLazySingleton(() => AddAddressUsecase(sl()));
   sl.registerLazySingleton<CustomerRepository>(
     () => CustomerRepositoryImpl(remoteDataSource: sl()),
   );
@@ -110,16 +134,15 @@ Future<void> init() async {
   // --- Product ---
   sl.registerFactory(
     () => ProductCubit(
-      getProductsUsecase: sl(),
-      getCategoriesUsecase: sl(),
-      getOptionsUsecase: sl(),
+      // اطمینان از مطابقت نام پارامترها با Cubit
+      getProductsUsecase: sl<GetProductsByStoreUsecase>(), 
+      getCategoriesUsecase: sl<GetProductCategoriesUsecase>(),
+      getOptionsUsecase: sl<GetProductOptionsUsecase>(),
     ),
   );
-  // **!! اطمینان از عدم ثبت تکراری GetProductsByStoreUsecase !!**
-  // فقط یک بار باید ثبت شود (اینجا یا جای دیگر)
   sl.registerLazySingleton(() => GetProductsByStoreUsecase(sl()));
-  sl.registerLazySingleton(() => GetProductCategoriesUsecase(sl())); // ثبت یوزکیس جدید
-  sl.registerLazySingleton(() => GetProductOptionsUsecase(sl()));    // ثبت یوزکیس جدید
+  sl.registerLazySingleton(() => GetProductCategoriesUsecase(sl()));
+  sl.registerLazySingleton(() => GetProductOptionsUsecase(sl()));
   sl.registerLazySingleton<ProductRepository>(
     () => ProductRepositoryImpl(remoteDataSource: sl()),
   );
@@ -130,14 +153,14 @@ Future<void> init() async {
   // --- Promotion ---
   sl.registerLazySingleton(() => GetPromotionsUsecase(sl()));
   sl.registerLazySingleton<PromotionRepository>(
-    () => FakePromotionRepositoryImpl(remoteDataSource: sl()), // توجه: این Fake است
+    () => FakePromotionRepositoryImpl(remoteDataSource: sl()),
   );
   sl.registerLazySingleton<PromotionRemoteDataSource>(
     () => PromotionRemoteDataSourceImpl(supabaseClient: sl()),
   );
 
   // --- Cart ---
-  sl.registerFactory( // **!! تغییر به registerFactory !!**
+  sl.registerFactory(
     () => CartBloc(
       getCart: sl(),
       addProductToCart: sl(),
@@ -149,13 +172,53 @@ Future<void> init() async {
   sl.registerLazySingleton(() => AddProductToCartUsecase(sl()));
   sl.registerLazySingleton(() => RemoveProductFromCartUsecase(sl()));
   sl.registerLazySingleton(() => UpdateProductQuantityUsecase(sl()));
-
   sl.registerLazySingleton<CartRepository>(
     () => CartRepositoryImpl(remoteDataSource: sl()),
   );
   sl.registerLazySingleton<CartRemoteDataSource>(
     () => CartRemoteDataSourceImpl(supabaseClient: sl()),
   );
+
+  // --- Checkout ---
+  sl.registerFactory(
+    () => CheckoutCubit(
+      placeOrderUsecase: sl(),
+      validateCouponUsecase: sl(), // <-- ** اصلاحیه اصلی اینجا بود **
+    ),
+  );
+  sl.registerLazySingleton(() => PlaceOrderUsecase(sl()));
+  sl.registerLazySingleton(() => ValidateCouponUsecase(sl())); // <-- ** این خط اضافه شد **
+  sl.registerLazySingleton<CheckoutRepository>(
+    () => CheckoutRepositoryImpl(remoteDataSource: sl()),
+  );
+  sl.registerLazySingleton<CheckoutRemoteDataSource>(
+    () => CheckoutRemoteDataSourceImpl(supabaseClient: sl()),
+  );
+  // --- End Checkout ---
+
+  // ========== Order Feature ==========
+  // Cubit
+  sl.registerFactory(() => OrderTrackingCubit(
+        getOrderUpdatesUsecase: sl(),
+        getOrderDetailsUsecase: sl(),
+      ));
+  sl.registerFactory(() => OrderHistoryCubit(getMyOrdersUsecase: sl()));
+
+  // UseCases
+  sl.registerLazySingleton(() => GetOrderUpdatesUsecase(sl()));
+  sl.registerLazySingleton(() => GetMyOrdersUsecase(sl()));
+  sl.registerLazySingleton(() => GetOrderDetailsUsecase(sl()));
+
+  // Repository
+  sl.registerLazySingleton<OrderRepository>(
+    () => OrderRepositoryImpl(remoteDatasource: sl()),
+  );
+
+  // Datasource
+  sl.registerLazySingleton<OrderRemoteDatasource>(
+    () => OrderRemoteDataSourceImpl(supabaseClient: sl()),
+  );
+  // --- End Order ---
 
   // #endregion
 }
