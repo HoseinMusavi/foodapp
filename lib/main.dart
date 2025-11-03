@@ -2,10 +2,12 @@
 
 import 'package:customer_app/core/di/service_locator.dart' as di;
 import 'package:customer_app/core/theme/app_theme.dart';
+import 'package:customer_app/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:customer_app/features/auth/presentation/pages/login_page.dart';
 import 'package:customer_app/features/cart/presentation/bloc/cart_bloc.dart';
 import 'package:customer_app/features/cart/presentation/pages/cart_page.dart';
 import 'package:customer_app/features/cart/presentation/pages/order_tracking_page.dart';
+
 import 'package:customer_app/features/customer/domain/entities/address_entity.dart';
 import 'package:customer_app/features/customer/presentation/cubit/customer_cubit.dart';
 import 'package:customer_app/features/customer/presentation/pages/address_details_form_page.dart';
@@ -15,17 +17,27 @@ import 'package:customer_app/main_shell.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+// --- ** اصلاحیه ۱: ایمپورت با پیشوند ** ---
+import 'package:supabase_flutter/supabase_flutter.dart' as supabase; 
 import 'package:customer_app/core/utils/lat_lng.dart' as core_lat_lng;
 
 // --- Checkout ---
 import 'package:customer_app/features/checkout/presentation/pages/checkout_summary_page.dart';
+import 'package:customer_app/features/checkout/presentation/cubit/checkout_cubit.dart';
+
+// --- سایر ایمپورت‌ها ... ---
+import 'package:customer_app/features/order/presentation/pages/order_history_page.dart';
+import 'package:customer_app/features/product/presentation/cubit/product_cubit.dart';
+import 'package:customer_app/features/product/presentation/pages/product_list_page.dart';
+import 'package:customer_app/features/store/domain/entities/store_entity.dart';
+import 'package:customer_app/core/utils/lat_lng.dart';
 
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Supabase.initialize(
+  // --- ** اصلاحیه ۲: استفاده از پیشوند ** ---
+  await supabase.Supabase.initialize(
     url: 'https://zjtnzzammmyuagxatwgf.supabase.co',
     anonKey:
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpqdG56emFtbW15dWFneGF0d2dmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQwNzI5NjksImV4cCI6MjA2OTY0ODk2OX0.arRyVtvhA0w5xdopkQC8bRZ0hnKKtIJIaXtYkoKMbJw',
@@ -40,8 +52,15 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (context) => di.sl<CartBloc>()..add(CartStarted()),
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider(create: (context) => di.sl<AuthCubit>()),
+        BlocProvider(create: (context) => di.sl<CustomerCubit>()),
+        BlocProvider(
+          create: (context) =>
+              di.sl<CartBloc>()..add(CartStarted(forceRefresh: true)),
+        ),
+      ],
       child: MaterialApp(
         title: 'فود اپ',
         debugShowCheckedModeBanner: false,
@@ -61,6 +80,21 @@ class MyApp extends StatelessWidget {
 
   Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
+      case '/':
+        return MaterialPageRoute(builder: (context) => const AuthGate());
+      case '/login':
+        return MaterialPageRoute(builder: (context) => const LoginPage());
+      case '/home':
+        return MaterialPageRoute(
+            builder: (context) => const MainShell());
+      case '/store-details':
+        final store = settings.arguments as StoreEntity;
+        return MaterialPageRoute(
+          builder: (context) => BlocProvider(
+            create: (context) => di.sl<ProductCubit>(),
+            child: ProductListPage(store: store),
+          ),
+        );
       case '/cart':
         return MaterialPageRoute(builder: (_) => const CartPage());
 
@@ -74,36 +108,36 @@ class MyApp extends StatelessWidget {
       case '/address-details-form':
         final location = settings.arguments as core_lat_lng.LatLng;
         return MaterialPageRoute(
-          builder: (context) => BlocProvider.value(
-            value: di.sl<CustomerCubit>(),
-            child: AddressDetailsFormPage(location: location),
-          ),
+          builder: (context) => AddressDetailsFormPage(location: location),
         );
 
       case '/checkout-summary':
         if (settings.arguments is AddressEntity) {
           final address = settings.arguments as AddressEntity;
           return MaterialPageRoute(
-            builder: (_) => CheckoutSummaryPage(selectedAddress: address),
+            builder: (_) => BlocProvider(
+              create: (context) => di.sl<CheckoutCubit>(),
+              child: CheckoutSummaryPage(selectedAddress: address),
+            ),
           );
         } else {
           print('Error: Invalid arguments type for /checkout-summary. Expected AddressEntity, got ${settings.arguments?.runtimeType}');
           return MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(), body: const Center(child: Text('خطا در بارگذاری خلاصه سفارش'))));
         }
 
-      // ****** اینجا اصلاح شد ******
       case '/track-order':
-        // ما باید آبجکت settings رو به MaterialPageRoute پاس بدیم
-        // تا صفحه OrderTrackingPage بتونه arguments (یعنی orderId) رو بخونه.
         return MaterialPageRoute(
-          settings: settings, // <-- این خط حیاتی اضافه شد
+          settings: settings,
           builder: (_) => const OrderTrackingPage(),
         );
-      // ****** پایان اصلاح ******
 
+      case '/order-history':
+        return MaterialPageRoute(
+            builder: (context) => const OrderHistoryPage());
+            
       default:
         print('Warning: Route ${settings.name} not defined.');
-        return null;
+        return MaterialPageRoute(builder: (_) => const AuthGate());
     }
   }
 }
@@ -113,14 +147,19 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<AuthState>(
-      stream: Supabase.instance.client.auth.onAuthStateChange,
+    // --- ** اصلاحیه ۳: استفاده از پیشوند در StreamBuilder ** ---
+    return StreamBuilder<supabase.AuthState>(
+      stream: supabase.Supabase.instance.client.auth.onAuthStateChange,
       builder: (context, snapshot) {
+        // snapshot.data اکنون به درستی از نوع supabase.AuthState است
         final session = snapshot.data?.session;
         if (session != null) {
-          final customerState = di.sl<CustomerCubit>().state;
+          
+          // customerState از نوع AuthState (مربوط به auth_cubit.dart) است
+          final customerState = context.read<CustomerCubit>().state;
+          // CustomerInitial زیرمجموعه AuthState (مربوط به auth_cubit.dart) است
           if (customerState is CustomerInitial) {
-            di.sl<CustomerCubit>().fetchCustomerDetails();
+            context.read<CustomerCubit>().fetchCustomerDetails();
           }
           try {
             final cartState = context.read<CartBloc>().state;
@@ -137,7 +176,6 @@ class AuthGate extends StatelessWidget {
           // Reset cart on logout
           if (context.mounted) {
             try {
-              // Ensure CartStarted accepts forceRefresh (non-const constructor)
               context.read<CartBloc>().add(CartStarted(forceRefresh: true));
             } catch (e) {
               print("Could not find CartBloc provider in AuthGate during logout reset: $e");

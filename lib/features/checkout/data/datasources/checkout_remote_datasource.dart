@@ -1,21 +1,25 @@
 import 'package:customer_app/core/error/exceptions.dart';
+// ایمپورت UseCase (برای Entity)
+import 'package:customer_app/features/checkout/domain/usecases/validate_coupon_usecase.dart'; 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// Abstract class defining the contract for remote checkout data operations
+// Abstract class
 abstract class CheckoutRemoteDataSource {
-  /// Calls the Supabase RPC function 'place_order'.
-  ///
-  /// Requires the [addressId] and accepts optional [couponCode] and [notes].
-  /// Returns the new order ID (int) on success.
-  /// Throws a [ServerException] on failure.
   Future<int> placeOrder({
     required int addressId,
     String? couponCode,
     String? notes,
   });
+
+  // --- این متد اضافه شود ---
+  Future<CouponValidationResult> validateCoupon({
+    required String couponCode,
+    required double subtotal,
+  });
+  // -------------------------
 }
 
-// Implementation using Supabase client
+// Implementation
 class CheckoutRemoteDataSourceImpl implements CheckoutRemoteDataSource {
   final SupabaseClient supabaseClient;
 
@@ -27,8 +31,8 @@ class CheckoutRemoteDataSourceImpl implements CheckoutRemoteDataSource {
     String? couponCode,
     String? notes,
   }) async {
+    // ... (کد قبلی شما - بدون تغییر)
     try {
-      // Call the 'place_order' PostgreSQL function via RPC
       final response = await supabaseClient.rpc(
         'place_order',
         params: {
@@ -37,28 +41,56 @@ class CheckoutRemoteDataSourceImpl implements CheckoutRemoteDataSource {
           'p_notes': notes,
         },
       );
-
-      // Ensure the response is an integer (the order ID)
       if (response is int) {
         return response;
       } else {
-        // Log unexpected response type
         print('Unexpected response type from place_order: ${response?.runtimeType}, value: $response');
         throw ServerException(message: 'Invalid response type from place_order function: ${response?.runtimeType}');
       }
     } on PostgrestException catch (e) {
-       // Log detailed Supabase errors
        print('Supabase place_order error: ${e.message}');
-       print('Code: ${e.code}');
-       print('Details: ${e.details}');
-       print('Hint: ${e.hint}');
-       // Return the specific error message from the database function
        throw ServerException(message: e.message);
     } catch (e, stackTrace) {
-      // Log generic errors
       print('Generic place_order error: $e');
       print('Stack trace: $stackTrace');
       throw ServerException(message: 'An unexpected error occurred while placing the order.');
     }
   }
+
+
+  // --- این متد اضافه شود ---
+  @override
+  Future<CouponValidationResult> validateCoupon({
+    required String couponCode,
+    required double subtotal,
+  }) async {
+    try {
+      final response = await supabaseClient.rpc(
+        'validate_coupon',
+        params: {
+          'p_coupon_code': couponCode,
+          'p_subtotal': subtotal,
+        },
+      );
+
+      // تابع ما یک list (حاوی یک map) برمی‌گرداند
+      if (response is List && response.isNotEmpty) {
+        final data = response.first as Map<String, dynamic>;
+        return CouponValidationResult(
+          discountAmount: (data['discount_amount'] as num).toDouble(),
+          errorMessage: data['error_message'] as String?,
+        );
+      } else {
+        throw ServerException(message: 'Invalid response from validate_coupon function.');
+      }
+    } on PostgrestException catch (e) {
+      print('Supabase validate_coupon error: ${e.message}');
+      throw ServerException(message: e.message);
+    } catch (e, stackTrace) {
+      print('Generic validate_coupon error: $e');
+      print('Stack trace: $stackTrace');
+      throw ServerException(message: 'An unexpected error occurred while validating the coupon.');
+    }
+  }
+  // -------------------------
 }
