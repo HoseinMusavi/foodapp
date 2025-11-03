@@ -134,9 +134,10 @@ Future<void> init() async {
   // --- Product ---
   sl.registerFactory(
     () => ProductCubit(
-      getProductsUsecase: sl(),
-      getCategoriesUsecase: sl(),
-      getOptionsUsecase: sl(),
+      // اطمینان از مطابقت نام پارامترها با Cubit
+      getProductsUsecase: sl<GetProductsByStoreUsecase>(), 
+      getCategoriesUsecase: sl<GetProductCategoriesUsecase>(),
+      getOptionsUsecase: sl<GetProductOptionsUsecase>(),
     ),
   );
   sl.registerLazySingleton(() => GetProductsByStoreUsecase(sl()));
@@ -186,9 +187,7 @@ Future<void> init() async {
     ),
   );
   sl.registerLazySingleton(() => PlaceOrderUsecase(sl()));
-  // --- ** این خط حیاتی اضافه شد ** ---
-  sl.registerLazySingleton(() => ValidateCouponUsecase(sl())); 
-  // ---------------------------------
+  sl.registerLazySingleton(() => ValidateCouponUsecase(sl())); // <-- ** این خط اضافه شد **
   sl.registerLazySingleton<CheckoutRepository>(
     () => CheckoutRepositoryImpl(remoteDataSource: sl()),
   );
@@ -201,7 +200,7 @@ Future<void> init() async {
   // Cubit
   sl.registerFactory(() => OrderTrackingCubit(
         getOrderUpdatesUsecase: sl(),
-        getOrderDetailsUsecase: sl(), 
+        getOrderDetailsUsecase: sl(),
       ));
   sl.registerFactory(() => OrderHistoryCubit(getMyOrdersUsecase: sl()));
 
