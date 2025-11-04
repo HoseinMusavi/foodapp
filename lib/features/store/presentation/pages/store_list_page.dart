@@ -138,11 +138,8 @@ class _StoreListPageState extends State<StoreListPage>
               );
             }
 
-            // --- ۳. اضافه کردن GestureDetector برای رفع فوکوس ---
             return GestureDetector(
               onTap: () {
-                // با تپ کردن روی هر جای صفحه (خارج از TextField)
-                // فوکوس گرفته شده و کیبورد بسته می‌شود
                 if (_searchFocusNode.hasFocus) {
                   _searchFocusNode.unfocus();
                 }
@@ -161,7 +158,9 @@ class _StoreListPageState extends State<StoreListPage>
                     ),
                     
                     BlocBuilder<DashboardCubit, DashboardState>(
-                      buildWhen: (p, c) => p.promotions != c.promotions,
+                      // --- (۱) اصلاحیه: حالا به لیست فروشگاه‌ها هم حساس است ---
+                      // تا بتوانیم storeId را در لیست جستجو کنیم
+                      buildWhen: (p, c) => p.promotions != c.promotions || p.stores != c.stores,
                       builder: (context, state) {
                         if (state.promotions.isEmpty) {
                           return const SliverToBoxAdapter(child: SizedBox.shrink());
@@ -169,7 +168,8 @@ class _StoreListPageState extends State<StoreListPage>
                         return SliverList(
                           delegate: SliverChildListDelegate([
                             _buildSectionTitle('پیشنهادهای ویژه'),
-                            _buildPromotionsSliver(context, state.promotions),
+                            // --- (۲) اصلاحیه: ارسال کل state ---
+                            _buildPromotionsSliver(context, state),
                           ]),
                         );
                       },
@@ -186,7 +186,7 @@ class _StoreListPageState extends State<StoreListPage>
                                _buildSectionTitle(
                                  state.selectedCategory.isEmpty
                                     ? 'همه فروشگاه‌ها'
-                                    : 'فروشگاه‌های ${state.selectedCategory}',
+                                     : 'فروشگاه‌های ${state.selectedCategory}',
                                  key: _storesTitleKey,
                                ),
                                _buildStoresLoadingSkeletonBox(),
@@ -320,24 +320,22 @@ class _StoreListPageState extends State<StoreListPage>
               children: [
                 _buildSectionTitle('دسته‌بندی‌ها'),
                 
-                // --- ۴. بروزرسانی اسکلت دسته‌بندی ---
                 SizedBox(
-                  height: 70.0, // ارتفاع جدید
+                  height: 70.0,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10), // پدینگ عمودی
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
                     itemCount: 6,
                     itemBuilder: (context, index) => Container(
-                        width: 100, // عرض چیپ اسکلت
+                        width: 100,
                         margin: const EdgeInsets.only(right: 12.0),
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(30), // گرد
+                          borderRadius: BorderRadius.circular(30),
                         ),
                       ),
                   ),
                 ),
-                // --- پایان بروزرسانی ---
 
                 _buildSectionTitle('پیشنهادهای ویژه'),
                 Container(
@@ -407,13 +405,12 @@ class _StoreListPageState extends State<StoreListPage>
     );
   }
 
-  // --- ۵. بازطراحی کامل ویجت دسته‌بندی ---
   Widget _buildCategoriesSliver(BuildContext context) {
     return SizedBox(
-      height: 70.0, // ارتفاع کمتر و شیک‌تر
+      height: 70.0,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10), // پدینگ برای زیبایی
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
         itemCount: categoryItems.length,
         itemBuilder: (context, index) {
           final category = categoryItems[index];
@@ -425,7 +422,6 @@ class _StoreListPageState extends State<StoreListPage>
             builder: (context, isSelected) {
               final colorScheme = Theme.of(context).colorScheme;
               
-              // --- طراحی جدید به سبک Chip ---
               return Padding(
                 padding: const EdgeInsets.only(right: 12.0),
                 child: Material(
@@ -476,12 +472,15 @@ class _StoreListPageState extends State<StoreListPage>
       ),
     );
   }
-  // --- پایان بازطراحی ---
 
+  // --- (۳) اصلاحیه: متد اکنون کل state را می‌گیرد ---
   Widget _buildPromotionsSliver(
     BuildContext context,
-    List<PromotionEntity> promotions,
+    DashboardState state, // به جای List<PromotionEntity>
   ) {
+    final promotions = state.promotions; // لیست بنرها
+    final allStores = state.stores; // لیست *همه* فروشگاه‌ها
+    
     return Column(
       children: [
         SizedBox(
@@ -493,9 +492,36 @@ class _StoreListPageState extends State<StoreListPage>
               final promotion = promotions[index];
               return GestureDetector(
                 onTap: () {
+                  // --- (۴) اصلاحیه: منطق کامل ناوبری ---
                   if (promotion.storeId != null) {
-                    print('Navigate to store ${promotion.storeId}');
-                    // TODO: مرحله بعد
+                    try {
+                      // جستجو در لیست فروشگاه‌های موجود در state
+                      final targetStore = allStores.firstWhere(
+                        (store) => store.id == promotion.storeId,
+                      );
+                      
+                      // ناوبری به صفحه فروشگاه
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ProductListPage(
+                            store: targetStore,
+                          ),
+                        ),
+                      );
+                    } catch (e) {
+                      // اگر به هر دلیلی فروشگاه پیدا نشد
+                      print('Store with id ${promotion.storeId} not found in state.');
+                      ScaffoldMessenger.of(context).showSnackBar(
+                         const SnackBar(
+                           content: Text('فروشگاه مورد نظر یافت نشد'),
+                           backgroundColor: Colors.red,
+                         ),
+                       );
+                    }
+                  } else {
+                    // اگر بنر storeId نداشت (مثلاً بنر عمومی اپلیکیشن)
+                    print('This promotion is general and has no store link.');
                   }
                 },
                 child: Container(
@@ -589,8 +615,6 @@ class _StoreListPageState extends State<StoreListPage>
        ),
     );
   }
-
-  // (متد استفاده نشده _buildStoresLoadingSkeletonSliver حذف شد)
   
   Widget _buildEmptyState(String message) {
     return Container(
