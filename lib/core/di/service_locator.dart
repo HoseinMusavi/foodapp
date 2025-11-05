@@ -16,6 +16,8 @@ import '../../features/auth/data/repositories/auth_repository_impl.dart';
 import '../../features/auth/domain/repositories/auth_repository.dart';
 import '../../features/auth/domain/usecases/login_usecase.dart';
 import '../../features/auth/domain/usecases/signup_usecase.dart';
+// --- ۱. ایمپورت LogoutUseCase ---
+import '../../features/auth/domain/usecases/logout_usecase.dart';
 import '../../features/auth/presentation/cubit/auth_cubit.dart';
 
 // --- Cart Feature ---
@@ -70,7 +72,7 @@ import '../../features/order/domain/usecases/get_order_updates_usecase.dart';
 import '../../features/order/presentation/cubit/order_tracking_cubit.dart';
 import '../../features/order/domain/usecases/get_my_orders_usecase.dart';
 import '../../features/order/presentation/cubit/order_history_cubit.dart';
-import '../../features/order/domain/usecases/get_order_details_usecase.dart'; // <-- ایمپورت شده
+import '../../features/order/domain/usecases/get_order_details_usecase.dart';
 // ---
 
 final sl = GetIt.instance;
@@ -79,16 +81,23 @@ Future<void> init() async {
   // #region External Dependencies
   sl.registerLazySingleton(() => Supabase.instance.client);
   sl.registerLazySingleton(
-    () => Dio(BaseOptions(baseUrl: 'https://fake-api.com')),
+    () => Dio(BaseOptions(baseUrl: 'https: //fake-api.com')),
   );
   // #endregion
 
   // #region Features
 
   // --- Auth ---
-  sl.registerFactory(() => AuthCubit(signupUseCase: sl(), loginUseCase: sl()));
+  // ۲. --- AuthCubit آپدیت شد ---
+  sl.registerFactory(() => AuthCubit(
+        signupUseCase: sl(),
+        loginUseCase: sl(),
+        logoutUseCase: sl(), // <-- این اضافه شد
+      ));
   sl.registerLazySingleton(() => SignupUseCase(sl()));
   sl.registerLazySingleton(() => LoginUseCase(sl()));
+  // ۳. --- LogoutUseCase ثبت شد ---
+  sl.registerLazySingleton(() => LogoutUseCase(sl()));
   sl.registerLazySingleton<AuthRepository>(
     () => AuthRepositoryImpl(remoteDataSource: sl()),
   );
@@ -193,7 +202,7 @@ Future<void> init() async {
   // Cubit
   sl.registerFactory(() => OrderTrackingCubit(
         getOrderUpdatesUsecase: sl(),
-        getOrderDetailsUsecase: sl(), // <-- ** اصلاح شد **
+        getOrderDetailsUsecase: sl(),
       ));
   sl.registerFactory(() => OrderHistoryCubit(getMyOrdersUsecase: sl()));
 

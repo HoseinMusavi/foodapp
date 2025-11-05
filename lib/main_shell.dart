@@ -17,6 +17,9 @@ import 'features/store/presentation/pages/store_list_page.dart';
 import 'features/order/presentation/cubit/order_history_cubit.dart';
 import 'features/order/presentation/pages/order_history_page.dart';
 
+// --- ۱. AuthCubit ایمپورت شود ---
+import 'features/auth/presentation/cubit/auth_cubit.dart';
+
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -28,17 +31,14 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _selectedIndex = 0;
 
-  // ****** 1. ترتیب ویجت‌ها اصلاح شد ******
   static const List<Widget> _widgetOptions = <Widget>[
     StoreListPage(),
-    CartPage(),         // <-- سبد خرید (ایندکس ۱)
-    OrderHistoryPage(), // <-- سفارش‌ها (ایندکس ۲)
+    CartPage(),
+    OrderHistoryPage(),
     CustomerProfilePage(),
   ];
 
   void _onItemTapped(int index) {
-    // ****** 2. منطق رفرش اصلاح شد ******
-    // اگر روی تب تاریخچه سفارش‌ها (ایندکس ۲) کلیک شد، لیست رو رفرش می‌کنیم
     if (index == 2) { 
       try {
         context.read<OrderHistoryCubit>().fetchOrderHistory();
@@ -67,12 +67,15 @@ class _MainShellState extends State<MainShell> {
         BlocProvider(
           create: (context) => sl<OrderHistoryCubit>(),
         ),
+        // --- ۲. AuthCubit اینجا اضافه شد ---
+        BlocProvider(
+          create: (context) => sl<AuthCubit>(),
+        ),
       ],
       child: Scaffold(
         body: Center(
           child: _widgetOptions.elementAt(_selectedIndex),
         ),
-        // ****** 3. ترتیب آیتم‌ها اصلاح شد ******
         bottomNavigationBar: BottomNavigationBar(
           type: BottomNavigationBarType.fixed,
           items: const <BottomNavigationBarItem>[
@@ -81,11 +84,11 @@ class _MainShellState extends State<MainShell> {
               label: 'فروشگاه‌ها',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.shopping_cart_outlined), // <-- آیتم سبد خرید
+              icon: Icon(Icons.shopping_cart_outlined),
               label: 'سبد خرید', 
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.receipt_long_outlined), // <-- آیتم سفارش‌ها
+              icon: Icon(Icons.receipt_long_outlined),
               label: 'سفارش‌ها',
             ),
             BottomNavigationBarItem(

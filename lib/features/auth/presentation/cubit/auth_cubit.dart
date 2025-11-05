@@ -1,26 +1,38 @@
+// lib/features/auth/presentation/cubit/auth_cubit.dart
+
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/error/failure.dart';
+// ۱. --- ایمپورت‌های مورد نیاز ---
+import '../../../../core/usecase/usecase.dart';
 import '../../domain/usecases/login_usecase.dart';
 import '../../domain/usecases/signup_usecase.dart';
+import '../../domain/usecases/logout_usecase.dart';
 
 part 'auth_state.dart';
 
 class AuthCubit extends Cubit<AuthState> {
   final SignupUseCase signupUseCase;
   final LoginUseCase loginUseCase;
-  // دسترسی به کلاینت Supabase اضافه شد
-  final SupabaseClient _supabaseClient = Supabase.instance.client;
+  // ۲. --- اضافه کردن logoutUseCase ---
+  final LogoutUseCase logoutUseCase;
+  
+  // (کلاینت مستقیم Supabase دیگر اینجا لازم نیست)
+  // final SupabaseClient _supabaseClient = Supabase.instance.client;
 
-  AuthCubit({required this.signupUseCase, required this.loginUseCase})
-      : super(AuthInitial());
+  AuthCubit({
+    required this.signupUseCase,
+    required this.loginUseCase,
+    required this.logoutUseCase, // ۳. --- اضافه شدن به constructor ---
+  }) : super(AuthInitial());
 
   Future<void> signup({
     required String email,
     required String password,
     required String fullName,
   }) async {
+    // ... (این متد بدون تغییر است)
     emit(AuthLoading());
     final result = await signupUseCase(
       SignupParams(email: email, password: password, fullName: fullName),
@@ -35,6 +47,7 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> login({required String email, required String password}) async {
+    // ... (این متد بدون تغییر است)
     print("--- CUBIT: Login method called ---");
     emit(AuthLoading());
     final result = await loginUseCase(
@@ -58,14 +71,22 @@ class AuthCubit extends Cubit<AuthState> {
     );
   }
 
-  // **** این متد اضافه شد ****
+  // --- ۴. بازنویسی کامل متد signOut ---
   Future<void> signOut() async {
-    try {
-      await _supabaseClient.auth.signOut();
-      // AuthGate به صورت خودکار به صفحه Login هدایت میکند
-      emit(AuthInitial()); // بازگشت به حالت اولیه
-    } catch (e) {
-      emit(const AuthFailure(message: 'Failed to sign out'));
-    }
+    // برای خروج نیازی به حالت Loading نیست
+    final result = await logoutUseCase(NoParams());
+
+    result.fold(
+      (failure) {
+        // اگر خروج از حساب به هر دلیلی با خطا مواجه شد
+        final message = (failure is ServerFailure) ? failure.message : 'Failed to sign out';
+        emit(AuthFailure(message: message));
+      },
+      (success) {
+        // اگر خروج موفق بود
+        // AuthGate به صورت خودکار به صفحه Login هدایت می‌کند
+        emit(AuthInitial()); // بازگشت به حالت اولیه
+      },
+    );
   }
 }

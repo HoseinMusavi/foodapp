@@ -1,8 +1,11 @@
+// lib/features/customer/presentation/pages/customer_profile_page.dart
+
 import 'package:customer_app/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:customer_app/features/customer/domain/entities/customer_entity.dart';
 import 'package:customer_app/features/customer/presentation/cubit/customer_cubit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'dart:developer' as dev; // برای لاگ‌گذاری
 
 class CustomerProfilePage extends StatefulWidget {
   const CustomerProfilePage({super.key});
@@ -19,20 +22,36 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
 
   CustomerEntity? _currentCustomer;
   bool _isEditing = false;
+  // --- ۱. اضافه شدن فلگ برای تشخیص کاربر جدید ---
+  bool _isNewUser = false;
 
   @override
-  bool get wantKeepAlive => true; // ✅ جلوگیری از ری‌بیلد هنگام تعویض تب‌ها
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
+    dev.log('[LOG-UI] 1. initState()', name: 'CustomerProfilePage');
     _fullNameController = TextEditingController();
     _phoneController = TextEditingController();
 
     final state = context.read<CustomerCubit>().state;
+    dev.log('[LOG-UI] 2. Initial Cubit State in initState: ${state.runtimeType}', name: 'CustomerProfilePage');
+    
     if (state is CustomerLoaded) {
-      _updateControllers(state.customer);
+      dev.log('[LOG-UI] 3. initState: Cubit is already CustomerLoaded.', name: 'CustomerProfilePage');
       _currentCustomer = state.customer;
+      _updateControllers(state.customer);
+      
+      // --- ۲. بررسی در initState (منطق کاربر جدید) ---
+      if (state.customer.fullName.isEmpty || state.customer.phone.isEmpty) {
+        dev.log('[LOG-UI] 4. initState: Detected new user. Forcing edit mode.', name: 'CustomerProfilePage');
+        _isEditing = true;
+        _isNewUser = true; // این یک کاربر جدید است
+      }
+    } else if (state is CustomerInitial) {
+      dev.log('[LOG-UI] 3. initState: Cubit is CustomerInitial. Calling fetchCustomerDetails().', name: 'CustomerProfilePage');
+      context.read<CustomerCubit>().fetchCustomerDetails();
     }
   }
 
@@ -44,16 +63,29 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
   }
 
   void _updateControllers(CustomerEntity customer) {
+    dev.log('[LOG-UI] _updateControllers() called with name: "${customer.fullName}"', name: 'CustomerProfilePage');
     _fullNameController.text = customer.fullName;
     _phoneController.text = customer.phone;
   }
 
   void _toggleEdit() {
+    // --- ۳. منطق دکمه انصراف (منطق کاربر جدید) ---
+    if (_isNewUser && _isEditing) {
+      dev.log('[LOG-UI] _toggleEdit(): New user tried to cancel edit. Denied.', name: 'CustomerProfilePage');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لطفا ابتدا پروفایل خود را تکمیل کنید.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return; // از خروج از حالت ویرایش جلوگیری کن
+    }
     setState(() => _isEditing = !_isEditing);
   }
 
   void _saveProfile() {
     if (_formKey.currentState!.validate() && _currentCustomer != null) {
+      dev.log('[LOG-UI] _saveProfile() called.', name: 'CustomerProfilePage');
       final updatedCustomer = CustomerEntity(
         id: _currentCustomer!.id,
         email: _currentCustomer!.email,
@@ -63,22 +95,48 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
         defaultAddressId: _currentCustomer!.defaultAddressId,
       );
       context.read<CustomerCubit>().updateCustomer(updatedCustomer);
-      setState(() => _isEditing = false);
+      
+      // --- ۴. پس از ذخیره (منطق کاربر جدید) ---
+      setState(() {
+        _isEditing = false;
+        _isNewUser = false; // کاربر اطلاعات خود را ذخیره کرد
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    dev.log('[LOG-UI] build() called.', name: 'CustomerProfilePage');
 
     return Scaffold(
       body: BlocConsumer<CustomerCubit, CustomerState>(
         listener: (context, state) {
+          dev.log('[LOG-UI] BlocListener detected state: ${state.runtimeType}', name: 'CustomerProfilePage');
           if (state is CustomerLoaded) {
             _currentCustomer = state.customer;
             _updateControllers(state.customer);
+
+            // --- ۵. بررسی در listener (منطق کاربر جدید) ---
+            if (state.customer.fullName.isEmpty || state.customer.phone.isEmpty) {
+              if (!_isEditing) { // فقط اگر قبلاً در حالت ویرایش نبودیم
+                dev.log('[LOG-UI] Listener: Detected new user. Forcing edit mode.', name: 'CustomerProfilePage');
+                setState(() {
+                  _isEditing = true;
+                  _isNewUser = true;
+                });
+              }
+            } else if (_isNewUser && state.customer.fullName.isNotEmpty) {
+              // اگر کاربر اطلاعاتش را ذخیره کرده و ما new user بودیم
+              dev.log('[LOG-UI] Listener: User was new, but data is now present. Disabling new user mode.', name: 'CustomerProfilePage');
+              setState(() {
+                 _isNewUser = false;
+                 _isEditing = false;
+              });
+            }
           }
           if (state is CustomerError) {
+            dev.log('[LOG-UI] Listener: Detected CustomerError: ${state.message}', name: 'CustomerProfilePage');
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(state.message),
@@ -88,20 +146,48 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
           }
         },
         builder: (context, state) {
-          if (state is CustomerInitial) {
-            context.read<CustomerCubit>().fetchCustomerDetails();
-            return const Center(child: CircularProgressIndicator());
+          dev.log('[LOG-UI] BlocBuilder building with state: ${state.runtimeType}', name: 'CustomerProfilePage');
+          
+          final customer = (state is CustomerLoaded) 
+              ? state.customer 
+              : _currentCustomer;
+
+          // --- ۶. مدیریت حالت‌های لودینگ و خطا ---
+          if (state is CustomerLoading && customer == null) {
+             dev.log('[LOG-UI] Builder: Showing full page loading (Loading, no customer data).', name: 'CustomerProfilePage');
+             return const Center(child: CircularProgressIndicator());
           }
 
-          final customer =
-              (state is CustomerLoaded) ? state.customer : _currentCustomer;
-
+          if (state is CustomerError && customer == null) {
+             dev.log('[LOG-UI] Builder: Showing Error widget (Error, no customer data).', name: 'CustomerProfilePage');
+             return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('خطا در بارگیری اطلاعات: ${state.message}'),
+                  ElevatedButton(
+                    onPressed: () {
+                       dev.log('[LOG-UI] "Retry" button pressed.', name: 'CustomerProfilePage');
+                       context.read<CustomerCubit>().fetchCustomerDetails();
+                    },
+                    child: const Text('تلاش مجدد'),
+                  )
+                ],
+              ),
+            );
+          }
+          
           if (customer == null) {
-            return const Center(child: CircularProgressIndicator());
+             dev.log('[LOG-UI] Builder: Showing full page loading (Customer is null, state is ${state.runtimeType}).', name: 'CustomerProfilePage');
+             return const Center(child: CircularProgressIndicator());
           }
+          // --- پایان مدیریت حالت‌ها ---
 
+
+          dev.log('[LOG-UI] Builder: Showing profile page. IsEditing: $_isEditing, IsNewUser: $_isNewUser', name: 'CustomerProfilePage');
           return RefreshIndicator(
             onRefresh: () async {
+              dev.log('[LOG-UI] RefreshIndicator pulled.', name: 'CustomerProfilePage');
               context.read<CustomerCubit>().fetchCustomerDetails();
             },
             child: SingleChildScrollView(
@@ -134,7 +220,9 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
     final avatarUrl = customer.avatarUrl;
     final fallbackLetter = customer.fullName.isNotEmpty
         ? customer.fullName[0].toUpperCase()
-        : 'U';
+        : customer.email.isNotEmpty
+          ? customer.email[0].toUpperCase()
+          : '؟';
 
     return Container(
       width: double.infinity,
@@ -172,20 +260,22 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
           ),
           const SizedBox(height: 12),
           Text(
-            customer.fullName,
+            customer.fullName.isNotEmpty ? customer.fullName : customer.email,
             style: theme.textTheme.headlineSmall
                 ?.copyWith(color: theme.colorScheme.onPrimary),
           ),
           const SizedBox(height: 4),
-          Text(
-            customer.email,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.onPrimary.withOpacity(0.8)),
-          ),
+          if (customer.fullName.isNotEmpty)
+            Text(
+              customer.email,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onPrimary.withOpacity(0.8)),
+            ),
           const SizedBox(height: 16),
           ElevatedButton.icon(
-            icon: Icon(_isEditing ? Icons.close : Icons.edit),
-            label: Text(_isEditing ? "انصراف" : "ویرایش پروفایل"),
+            // --- ۷. منطق دکمه (منطق کاربر جدید) ---
+            icon: Icon(_isEditing ? (_isNewUser ? Icons.edit_note : Icons.close) : Icons.edit),
+            label: Text(_isEditing ? (_isNewUser ? "تکمیل پروفایل" : "انصراف") : "ویرایش پروفایل"),
             style: ElevatedButton.styleFrom(
               backgroundColor: theme.colorScheme.onPrimary,
               foregroundColor: theme.colorScheme.primary,
@@ -203,6 +293,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
 
   Widget _buildReadOnlyProfile(BuildContext context, CustomerEntity customer) {
     return Padding(
+      key: const ValueKey('readOnly'), // Key برای AnimatedSwitcher
       padding: const EdgeInsets.all(16.0),
       child: Card(
         elevation: 3,
@@ -226,6 +317,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
   Widget _buildEditableForm(BuildContext context, CustomerEntity customer) {
     final theme = Theme.of(context);
     return Padding(
+      key: const ValueKey('editable'), // Key برای AnimatedSwitcher
       padding: const EdgeInsets.all(16.0),
       child: Form(
         key: _formKey,
@@ -236,6 +328,18 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
             padding: const EdgeInsets.all(16.0),
             child: Column(
               children: [
+                // --- ۸. پیام خوش‌آمدگویی (منطق کاربر جدید) ---
+                if (_isNewUser)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16.0),
+                    child: Text(
+                      'خوش آمدید! لطفا اطلاعات پروفایل خود را تکمیل کنید.',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 TextFormField(
                   controller: _fullNameController,
                   decoration: const InputDecoration(
@@ -243,6 +347,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                     prefixIcon: Icon(Icons.person_outline),
                   ),
                   validator: (v) => v == null || v.isEmpty ? 'نام الزامی است' : null,
+                  textInputAction: TextInputAction.next,
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
@@ -252,6 +357,8 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                     prefixIcon: Icon(Icons.phone_outlined),
                   ),
                   validator: (v) => v == null || v.isEmpty ? 'شماره الزامی است' : null,
+                  keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.done,
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
@@ -293,7 +400,13 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
     return ListTile(
       leading: Icon(icon),
       title: Text(label),
-      subtitle: Text(value),
+      subtitle: Text(
+        value.isEmpty ? 'ثبت نشده' : value, // اگر خالی بود، "ثبت نشده" نشان بده
+        style: TextStyle(
+          color: value.isEmpty ? Colors.grey[600] : null,
+          fontStyle: value.isEmpty ? FontStyle.italic : FontStyle.normal,
+        ),
+      ),
       dense: true,
     );
   }
