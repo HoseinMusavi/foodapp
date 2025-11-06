@@ -16,7 +16,6 @@ import '../../features/auth/data/repositories/auth_repository_impl.dart';
 import '../../features/auth/domain/repositories/auth_repository.dart';
 import '../../features/auth/domain/usecases/login_usecase.dart';
 import '../../features/auth/domain/usecases/signup_usecase.dart';
-// --- ۱. ایمپورت LogoutUseCase ---
 import '../../features/auth/domain/usecases/logout_usecase.dart';
 import '../../features/auth/presentation/cubit/auth_cubit.dart';
 
@@ -63,6 +62,8 @@ import '../../features/checkout/data/repositories/checkout_repository_impl.dart'
 import '../../features/checkout/domain/repositories/checkout_repository.dart';
 import '../../features/checkout/presentation/cubit/checkout_cubit.dart';
 import '../../features/checkout/domain/usecases/place_order_usecase.dart';
+// --- ایمپورت یوزکیس جدید ---
+import '../../features/checkout/domain/usecases/validate_coupon_usecase.dart';
 
 // --- Order Feature ---
 import '../../features/order/data/datasources/order_remote_datasource.dart';
@@ -88,15 +89,13 @@ Future<void> init() async {
   // #region Features
 
   // --- Auth ---
-  // ۲. --- AuthCubit آپدیت شد ---
   sl.registerFactory(() => AuthCubit(
         signupUseCase: sl(),
         loginUseCase: sl(),
-        logoutUseCase: sl(), // <-- این اضافه شد
+        logoutUseCase: sl(),
       ));
   sl.registerLazySingleton(() => SignupUseCase(sl()));
   sl.registerLazySingleton(() => LoginUseCase(sl()));
-  // ۳. --- LogoutUseCase ثبت شد ---
   sl.registerLazySingleton(() => LogoutUseCase(sl()));
   sl.registerLazySingleton<AuthRepository>(
     () => AuthRepositoryImpl(remoteDataSource: sl()),
@@ -187,9 +186,14 @@ Future<void> init() async {
 
   // --- Checkout ---
   sl.registerFactory(
-    () => CheckoutCubit(placeOrderUsecase: sl()),
+    () => CheckoutCubit(
+      placeOrderUsecase: sl(),
+      validateCouponUsecase: sl(), // --- یوزکیس جدید تزریق شد ---
+    ),
   );
   sl.registerLazySingleton(() => PlaceOrderUsecase(sl()));
+  // --- یوزکیس جدید ثبت شد ---
+  sl.registerLazySingleton(() => ValidateCouponUsecase(sl()));
   sl.registerLazySingleton<CheckoutRepository>(
     () => CheckoutRepositoryImpl(remoteDataSource: sl()),
   );

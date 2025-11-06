@@ -1,6 +1,7 @@
+// lib/features/checkout/presentation/cubit/checkout_state.dart
+
 part of 'checkout_cubit.dart';
 
-// Base abstract class for all checkout states
 abstract class CheckoutState extends Equatable {
   const CheckoutState();
 
@@ -8,13 +9,37 @@ abstract class CheckoutState extends Equatable {
   List<Object?> get props => [];
 }
 
-/// Initial state before any checkout process begins.
 class CheckoutInitial extends CheckoutState {}
 
-/// State indicating that the order placement is in progress.
+// --- استیت‌های مربوط به اعتبارسنجی کد تخفیف ---
+
+// زمانی که دکمه "اعمال" زده می‌شود و منتظر پاسخ سرور هستیم
+class CheckoutCouponValidating extends CheckoutState {}
+
+// زمانی که سرور پاسخ می‌دهد که کد معتبر است و مبلغ تخفیف را برمی‌گرداند
+class CheckoutCouponSuccess extends CheckoutState {
+  final double discountAmount;
+  const CheckoutCouponSuccess({required this.discountAmount});
+
+  @override
+  List<Object?> get props => [discountAmount];
+}
+
+// زمانی که کد نامعتبر است (خطای سرور یا خطای منطقی مثل "کد منقضی شده")
+class CheckoutCouponFailure extends CheckoutState {
+  final String message;
+  const CheckoutCouponFailure({required this.message});
+
+  @override
+  List<Object?> get props => [message];
+}
+
+// --- استیت‌های مربوط به ثبت نهایی سفارش (قبلاً وجود داشتند) ---
+
+// زمانی که دکمه "ثبت نهایی" زده می‌شود
 class CheckoutProcessing extends CheckoutState {}
 
-/// State indicating successful order placement, containing the new [orderId].
+// زمانی که سفارش با موفقیت ثبت می‌شود
 class CheckoutSuccess extends CheckoutState {
   final int orderId;
 
@@ -24,7 +49,7 @@ class CheckoutSuccess extends CheckoutState {
   List<Object?> get props => [orderId];
 }
 
-/// State indicating a failure during the checkout process, containing an error [message].
+// زمانی که در ثبت نهایی سفارش خطایی رخ می‌دهد
 class CheckoutFailure extends CheckoutState {
   final String message;
 
