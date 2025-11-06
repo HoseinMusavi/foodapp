@@ -6,6 +6,7 @@ import 'package:customer_app/features/auth/presentation/pages/login_page.dart';
 import 'package:customer_app/features/cart/presentation/bloc/cart_bloc.dart';
 import 'package:customer_app/features/cart/presentation/pages/cart_page.dart';
 import 'package:customer_app/features/cart/presentation/pages/order_tracking_page.dart';
+import 'package:customer_app/features/checkout/domain/entities/order_entity.dart';
 import 'package:customer_app/features/customer/domain/entities/address_entity.dart';
 import 'package:customer_app/features/customer/presentation/cubit/customer_cubit.dart';
 import 'package:customer_app/features/customer/presentation/pages/address_details_form_page.dart';
@@ -17,10 +18,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:customer_app/core/utils/lat_lng.dart' as core_lat_lng;
-
 // --- Checkout ---
 import 'package:customer_app/features/checkout/presentation/pages/checkout_summary_page.dart';
-
+// --- ایمپورت‌های جدید ---
+import 'package:customer_app/features/order/presentation/cubit/order_history_cubit.dart';
+import 'package:customer_app/features/order/presentation/pages/submit_review_page.dart';
+// ---
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,8 +43,18 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (context) => di.sl<CartBloc>()..add(CartStarted()),
+    // --- اصلاح شد: استفاده از MultiBlocProvider ---
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider(
+          // سبد خرید بلافاصله لود می‌شود
+          create: (context) => di.sl<CartBloc>()..add(CartStarted()),
+        ),
+        BlocProvider(
+          // تاریخچه سفارشات ایجاد می‌شود، اما منتظر لاگین می‌ماند
+          create: (context) => di.sl<OrderHistoryCubit>(), 
+        ),
+      ],
       child: MaterialApp(
         title: 'فود اپ',
         debugShowCheckedModeBanner: false,
@@ -57,6 +70,7 @@ class MyApp extends StatelessWidget {
         onGenerateRoute: _onGenerateRoute,
       ),
     );
+    // --- پایان اصلاح ---
   }
 
   Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
@@ -91,15 +105,26 @@ class MyApp extends StatelessWidget {
           return MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(), body: const Center(child: Text('خطا در بارگذاری خلاصه سفارش'))));
         }
 
-      // ****** اینجا اصلاح شد ******
       case '/track-order':
-        // ما باید آبجکت settings رو به MaterialPageRoute پاس بدیم
-        // تا صفحه OrderTrackingPage بتونه arguments (یعنی orderId) رو بخونه.
         return MaterialPageRoute(
-          settings: settings, // <-- این خط حیاتی اضافه شد
+          settings: settings, 
           builder: (_) => const OrderTrackingPage(),
         );
-      // ****** پایان اصلاح ******
+        
+      // --- مسیر جدید اضافه شد (بخش ۲) ---
+      case '/submit-review':
+        // اطمینان از اینکه آرگومان‌ها معتبر هستند
+        if (settings.arguments is OrderEntity) {
+          final order = settings.arguments as OrderEntity;
+          return MaterialPageRoute(
+            builder: (_) => SubmitReviewPage(order: order),
+            // ما OrderHistoryCubit را پاس نمی‌دهیم، چون از قبل در main.dart
+            // فراهم شده و در SubmitReviewPage (از طریق context.read) قابل دسترسی است.
+          );
+        } else {
+          return MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(), body: const Center(child: Text('خطا: سفارش معتبر نیست.'))));
+        }
+      // ---
 
       default:
         print('Warning: Route ${settings.name} not defined.');
@@ -118,10 +143,14 @@ class AuthGate extends StatelessWidget {
       builder: (context, snapshot) {
         final session = snapshot.data?.session;
         if (session != null) {
+          
+          // --- واکشی اطلاعات مشتری ---
           final customerState = di.sl<CustomerCubit>().state;
           if (customerState is CustomerInitial) {
             di.sl<CustomerCubit>().fetchCustomerDetails();
           }
+          
+          // --- واکشی سبد خرید ---
           try {
             final cartState = context.read<CartBloc>().state;
             if(cartState is! CartLoaded && cartState is! CartLoading){
@@ -132,12 +161,24 @@ class AuthGate extends StatelessWidget {
             context.read<CartBloc>().add(CartStarted());
           }
 
+          // --- اصلاح شد: واکشی تاریخچه سفارشات ---
+          // حالا که Provider در سطح بالا قرار دارد، می‌توانیم آن را فراخوانی کنیم
+          try {
+            final orderState = context.read<OrderHistoryCubit>().state;
+            if (orderState is OrderHistoryInitial) {
+               context.read<OrderHistoryCubit>().fetchOrderHistory();
+            }
+          } catch (e) {
+            // این خطا طبیعی است اگر Provider هنوز در حال ساخت باشد
+            print("AuthGate: Could not read OrderHistoryCubit state on login: $e");
+          }
+          // --- پایان اصلاح ---
+
           return const MainShell();
         } else {
           // Reset cart on logout
           if (context.mounted) {
             try {
-              // Ensure CartStarted accepts forceRefresh (non-const constructor)
               context.read<CartBloc>().add(CartStarted(forceRefresh: true));
             } catch (e) {
               print("Could not find CartBloc provider in AuthGate during logout reset: $e");

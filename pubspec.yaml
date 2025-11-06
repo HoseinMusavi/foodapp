@@ -58,6 +58,7 @@ dependencies:
 
   flutter_map: ^6.1.0
   flutter_launcher_icons: ^0.14.4
+  flutter_rating_bar: ^4.0.1
 
 
 dev_dependencies:
@@ -84,7 +85,7 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
-    - assets/logo/logo.png
+    - assets/logo/logo.jpg
     
 
   # An image asset can refer to one or more resolution-specific "variants", see
@@ -117,7 +118,7 @@ flutter_launcher_icons:
   ios: true 
   
   # [اصلاح ۳] هر سه مسیر به فایل واقعی شما اشاره می‌کنند
-  image_path: "assets/logo/logo.png"
+  image_path: "assets/logo/logo.jpg"
 
   adaptive_icon_background: "#E74C3C" 
-  adaptive_icon_foreground: "assets/logo/logo.png"
+  adaptive_icon_foreground: "assets/logo/logo.jpg"

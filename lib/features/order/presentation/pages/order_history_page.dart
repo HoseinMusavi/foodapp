@@ -1,240 +1,237 @@
 // lib/features/order/presentation/pages/order_history_page.dart
 
+// --- اصلاح شد: ایمپورت di حذف شد ---
 import 'package:customer_app/features/checkout/domain/entities/order_entity.dart';
+import 'package:customer_app/core/widgets/custom_network_image.dart';
 import 'package:customer_app/features/order/presentation/cubit/order_history_cubit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' as intl;
 
 class OrderHistoryPage extends StatelessWidget {
   const OrderHistoryPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Cubit توسط MainShell فراهم شده، پس فقط read می‌کنیم
-    final cubit = context.read<OrderHistoryCubit>();
-    
-    // اگر حالت اولیه بود، داده‌ها رو فچ می‌کنیم
-    if (cubit.state is OrderHistoryInitial) {
-      cubit.fetchOrderHistory();
-    }
-
+    // --- اصلاح شد: BlocProvider حذف شد ---
+    // کیوبیت حالا از main.dart (بالای این ویجت) تامین می‌شود
     return Scaffold(
       appBar: AppBar(
-        title: const Text('تاریخچه سفارش‌ها'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => cubit.fetchOrderHistory(),
-          ),
-        ],
+        title: const Text('تاریخچه سفارشات'),
       ),
-      body: BlocBuilder<OrderHistoryCubit, OrderHistoryState>(
-        builder: (context, state) {
-          
-          if (state is OrderHistoryLoading || state is OrderHistoryInitial) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (state is OrderHistoryFailure) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await context.read<OrderHistoryCubit>().fetchOrderHistory();
+        },
+        child: BlocBuilder<OrderHistoryCubit, OrderHistoryState>(
+          builder: (context, state) {
+            // --- اصلاح شد: اگر state اولیه بود، واکشی کن ---
+            if (state is OrderHistoryInitial) {
+              context.read<OrderHistoryCubit>().fetchOrderHistory();
+              return const Center(child: CircularProgressIndicator());
+            }
+            
+            if (state is OrderHistoryLoading && state is! OrderHistoryLoaded) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (state is OrderHistoryLoaded) {
+              if (state.orders.isEmpty) {
+                return LayoutBuilder( 
+                  builder: (context, constraints) => SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                      child: const Center(
+                        child: Text('شما هنوز سفارشی ثبت نکرده‌اید.'),
+                      ),
+                    ),
+                  ),
+                );
+              }
+              return ListView.builder(
+                itemCount: state.orders.length,
+                itemBuilder: (context, index) {
+                  final order = state.orders[index];
+                  return _OrderHistoryCard(
+                    order: order,
+                    reviewedOrderIds: state.reviewedOrderIds,
+                  );
+                },
+              );
+            }
+            if (state is OrderHistoryError) {
+              return Center(
+                child: Column( 
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.cloud_off_outlined, size: 60, color: Colors.grey[400]),
+                    Text('خطا: ${state.message}'),
                     const SizedBox(height: 16),
-                    Text(
-                      'خطا در دریافت اطلاعات',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                     const SizedBox(height: 8),
-                    Text(
-                      state.message,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
-                    ),
-                    const SizedBox(height: 24),
                     ElevatedButton(
-                      onPressed: () => cubit.fetchOrderHistory(),
+                      onPressed: () => context.read<OrderHistoryCubit>().fetchOrderHistory(),
                       child: const Text('تلاش مجدد'),
                     )
                   ],
                 ),
-              ),
-            );
-          }
-
-          if (state is OrderHistoryLoaded) {
-            if (state.orders.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.receipt_long_outlined, size: 80, color: Colors.grey[300]),
-                    const SizedBox(height: 24),
-                    Text(
-                      'هنوز سفارشی ثبت نکرده‌اید',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                     Text(
-                      'اولین سفارش خود را ثبت کنید!',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Colors.grey[600]),
-                    ),
-                  ],
-                ),
               );
             }
-
-            // نمایش لیست سفارش‌ها
-            return RefreshIndicator(
-              onRefresh: () => cubit.fetchOrderHistory(),
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                itemCount: state.orders.length,
-                itemBuilder: (context, index) {
-                  final order = state.orders[index];
-                  return _OrderHistoryCard(order: order);
-                },
-              ),
-            );
-          }
-
-          return const Center(child: Text('وضعیت نامشخص'));
-        },
+            
+            return const Center(child: CircularProgressIndicator());
+          },
+        ),
       ),
     );
+    // --- پایان اصلاح ---
   }
 }
 
-// ****** ویجت کارت کاملاً بازطراحی شد ******
 class _OrderHistoryCard extends StatelessWidget {
   final OrderEntity order;
-  
-  const _OrderHistoryCard({required this.order});
+  final Set<int> reviewedOrderIds;
 
-  // مپ کردن وضعیت به متن فارسی
-  String _getStatusText(OrderStatus status) {
-    switch (status) {
-      case OrderStatus.pending: return 'در انتظار تایید';
-      case OrderStatus.confirmed: return 'تایید شده';
-      case OrderStatus.preparing: return 'در حال آماده‌سازی';
-      case OrderStatus.delivering: return 'در حال ارسال';
-      case OrderStatus.delivered: return 'تحویل داده شد';
-      case OrderStatus.cancelled: return 'لغو شده';
-      default: return 'نامشخص';
-    }
-  }
-
-  // مپ کردن وضعیت به رنگ
-  Color _getStatusColor(OrderStatus status, BuildContext context) {
-     switch (status) {
-      case OrderStatus.pending: return Colors.orange.shade700;
-      case OrderStatus.confirmed:
-      case OrderStatus.preparing:
-      case OrderStatus.delivering:
-        return Theme.of(context).colorScheme.primary;
-      case OrderStatus.delivered: return Colors.green.shade700;
-      case OrderStatus.cancelled: return Theme.of(context).colorScheme.error;
-      default: return Colors.grey.shade700;
-    }
-  }
-
-  // مپ کردن وضعیت به آیکون
-  IconData _getStatusIcon(OrderStatus status) {
-     switch (status) {
-      case OrderStatus.pending: return Icons.hourglass_top_rounded;
-      case OrderStatus.confirmed: return Icons.check_circle_outline_rounded;
-      case OrderStatus.preparing: return Icons.kitchen_rounded;
-      case OrderStatus.delivering: return Icons.delivery_dining_outlined;
-      case OrderStatus.delivered: return Icons.check_circle_rounded;
-      case OrderStatus.cancelled: return Icons.cancel_rounded;
-      default: return Icons.receipt_long_outlined;
-    }
-  }
-
+  const _OrderHistoryCard({
+    required this.order,
+    required this.reviewedOrderIds,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final formatCurrency = NumberFormat.simpleCurrency(
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+    final formatCurrency = intl.NumberFormat.simpleCurrency(
       locale: 'fa_IR',
       name: ' تومان',
       decimalDigits: 0,
     );
-    final statusText = _getStatusText(order.status);
-    final statusColor = _getStatusColor(order.status, context);
-    final statusIcon = _getStatusIcon(order.status);
+    final formatDate = intl.DateFormat('d MMMM yyyy - HH:mm', 'fa_IR');
+
+    final bool canReview = order.status == OrderStatus.delivered &&
+        !reviewedOrderIds.contains(order.id);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      elevation: 0.5,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.grey[200]!, width: 0.5)
-      ),
+      elevation: 2,
+      shadowColor: Colors.black.withAlpha(30), 
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        // ** با کلیک روی کارت، به صفحه پیگیری همون سفارش میریم **
         onTap: () {
-          Navigator.pushNamed(
-            context,
-            '/track-order',
-            arguments: order.id, // <-- پاس دادن ID سفارش
-          );
+          Navigator.pushNamed(context, '/track-order', arguments: order.id);
         },
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0),
-          child: ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: CircleAvatar(
-              radius: 24,
-              backgroundColor: statusColor.withOpacity(0.1),
-              child: Icon(statusIcon, color: statusColor, size: 26),
-            ),
-            title: Text(
-              'سفارش #${order.id}', 
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                height: 1.4
-              ),
-            ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 4.0),
-              child: Text(
-                'تاریخ: ${DateFormat('d MMMM yyyy – HH:mm', 'fa_IR').format(order.createdAt)}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[700],
-                  height: 1.5
-                ),
-              ),
-            ),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  formatCurrency.format(order.totalPrice),
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.primary,
-                    letterSpacing: 0.2
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8.0),
+                    child: CustomNetworkImage(
+                      imageUrl: order.store?.logoUrl ?? 'https://via.placeholder.com/150',
+                      width: 50,
+                      height: 50,
+                      fit: BoxFit.cover,
+                    ),
                   ),
-                ),
-                 const SizedBox(height: 4),
-                Text(
-                  statusText,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: statusColor,
-                    fontWeight: FontWeight.bold,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          order.store?.name ?? 'نام فروشگاه',
+                          style: textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '#${order.id} • ${formatDate.format(order.createdAt)}',
+                          style: textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
+                  _buildStatusChip(context, order.status),
+                ],
+              ),
+              const Divider(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'مبلغ نهایی',
+                    style: textTheme.bodyMedium?.copyWith(color: Colors.grey[700]),
+                  ),
+                  Text(
+                    formatCurrency.format(order.totalPrice),
+                    style: textTheme.titleMedium?.copyWith(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.receipt_long_outlined),
+                      label: const Text('مشاهده فاکتور'),
+                      onPressed: () {
+                         Navigator.pushNamed(context, '/track-order', arguments: order.id);
+                      },
+                    ),
+                  ),
+                  if (canReview) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.star_outline, size: 20),
+                        label: const Text('ثبت نظر'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: colorScheme.secondaryContainer,
+                          foregroundColor: colorScheme.onSecondaryContainer,
+                          elevation: 0,
+                        ),
+                        // --- اصلاح شد: فعال‌سازی دکمه ---
+                        onPressed: () {
+                          // (معیار پذیرش ۲.۱)
+                          Navigator.pushNamed(
+                            context,
+                            '/submit-review',
+                            arguments: order, // آبجکت کامل سفارش پاس داده می‌شود
+                          );
+                        },
+                        // ---
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildStatusChip(BuildContext context, OrderStatus status) {
+    final (label, color) = switch (status) {
+      OrderStatus.pending => ('در انتظار', Colors.grey),
+      OrderStatus.confirmed => ('تایید شده', Colors.blue),
+      OrderStatus.preparing => ('در حال آماده‌سازی', Colors.orange),
+      OrderStatus.delivering => ('در حال ارسال', Colors.cyan),
+      OrderStatus.delivered => ('تحویل داده شد', Colors.green),
+      OrderStatus.cancelled => ('لغو شده', Colors.red),
+    };
+
+    return Chip(
+      label: Text(label),
+      labelStyle: const TextStyle(color: Colors.white, fontSize: 11),
+      backgroundColor: color,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
     );
   }
 }

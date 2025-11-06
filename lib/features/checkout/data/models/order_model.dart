@@ -2,66 +2,85 @@
 
 import 'package:customer_app/features/checkout/data/models/order_item_model.dart';
 import 'package:customer_app/features/checkout/domain/entities/order_entity.dart';
-import 'package:customer_app/features/store/data/models/store_model.dart'; // <-- ** 1. این ایمپورت اضافه شود **
+import 'package:customer_app/features/checkout/domain/entities/order_item_entity.dart';
+import 'package:customer_app/features/customer/data/models/address_model.dart';
+import 'package:customer_app/features/store/data/models/store_model.dart';
 
 class OrderModel extends OrderEntity {
+  
   const OrderModel({
     required super.id,
     required super.createdAt,
     required super.customerId,
-    required super.storeId,
-    required super.addressId,
+    super.storeId, // <-- حالا اختیاری است
+    super.addressId, // <-- حالا اختیاری است
     required super.subtotalPrice,
     required super.deliveryFee,
     required super.discountAmount,
     required super.totalPrice,
     required super.status,
-    super.notes,
     required super.items,
-    super.store, // <-- ** 2. این فیلد اضافه شود **
+    super.store,
+    super.address,
+    super.estimatedDeliveryTime,
+    super.notes,
   });
 
   factory OrderModel.fromJson(Map<String, dynamic> json) {
     
-    // خواندن آیتم‌ها
-    List<OrderItemModel> itemsList = [];
-    if (json['order_items'] != null && json['order_items'] is List) {
-      itemsList = (json['order_items'] as List)
-          .map((itemJson) => OrderItemModel.fromJson(itemJson))
-          .toList();
+    // --- منطق هوشمند (رفع خطای Map/int و مدیریت Null) ---
+    
+    // ۱. خواندن Store ID
+    final storeData = json['store_id'];
+    int? parsedStoreId; // <-- اصلاح شد: می‌تواند null باشد
+    if (storeData is int) {
+      parsedStoreId = storeData;
+    } else if (storeData is Map) {
+      parsedStoreId = (storeData['id'] as num).toInt();
+    } else {
+      parsedStoreId = null; // <-- اگر null بود، null بماند
     }
 
-    // ****** 3. این بخش اضافه شد (برای خواندن فروشگاه) ******
-    StoreModel? storeModel;
-    if (json['store'] != null && json['store'] is Map) {
-      try {
-         storeModel = StoreModel.fromJson(json['store']);
-      } catch (e) {
-        print('Error parsing store in OrderModel: $e');
-        storeModel = null;
-      }
+    // ۲. خواندن Address ID
+    final addressData = json['address_id'];
+    int? parsedAddressId; // <-- اصلاح شد: می‌تواند null باشد
+    if (addressData is int) {
+      parsedAddressId = addressData;
+    } else if (addressData is Map) {
+      parsedAddressId = (addressData['id'] as num).toInt();
+    } else {
+      parsedAddressId = null; // <-- اگر null بود، null بماند (دیگر خطا پرتاب نمی‌شود)
     }
-    // ****** پایان بخش اضافه شده ******
-    
+    // --- پایان منطق هوشمند ---
+
+    final List<OrderItemEntity> parsedItems = 
+        json['order_items'] != null && json['order_items'] is List
+            ? (json['order_items'] as List)
+                .map((item) => OrderItemModel.fromJson(item as Map<String, dynamic>))
+                .toList()
+            : []; 
+
     return OrderModel(
-      id: json['id'],
-      createdAt: DateTime.parse(json['created_at']),
-      customerId: json['customer_id'],
-      storeId: json['store_id'],
-      addressId: json['address_id'],
+      id: (json['id'] as num).toInt(),
+      createdAt: DateTime.parse(json['created_at'] as String),
+      customerId: json['customer_id'] as String,
+      storeId: parsedStoreId, 
+      addressId: parsedAddressId, 
       subtotalPrice: (json['subtotal_price'] as num).toDouble(),
       deliveryFee: (json['delivery_fee'] as num).toDouble(),
       discountAmount: (json['discount_amount'] as num).toDouble(),
       totalPrice: (json['total_price'] as num).toDouble(),
-      status: OrderStatus.values.firstWhere(
-        (e) => e.name == json['status'],
-        orElse: () => OrderStatus.pending,
-      ),
-      notes: json['notes'],
-      items: itemsList, 
-      store: storeModel, // <-- ** 4. این فیلد پاس داده شد **
+      status: (json['status'] as String).toOrderStatus(), 
+      items: parsedItems, 
+      
+      estimatedDeliveryTime: json['estimated_delivery_time'] as String?,
+      notes: json['notes'] as String?,
+      store: (json['store_id'] is Map)
+          ? StoreModel.fromJson(json['store_id'] as Map<String, dynamic>)
+          : null,
+      address: (json['address_id'] is Map)
+          ? AddressModel.fromJson(json['address_id'] as Map<String, dynamic>)
+          : null,
     );
   }
-
-  // ... متد toJson() بدون تغییر باقی می‌ماند ...
 }

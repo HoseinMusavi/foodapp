@@ -7,16 +7,19 @@ import 'package:customer_app/features/order/domain/repositories/order_repository
 import 'package:dartz/dartz.dart';
 import 'package:equatable/equatable.dart';
 
+// --- اصلاح شد: UseCase<OrderEntity, GetOrderDetailsParams> ---
 class GetOrderDetailsUsecase
-    extends UseCase<OrderEntity, GetOrderDetailsParams> {
+    implements UseCase<OrderEntity, GetOrderDetailsParams> {
   final OrderRepository repository;
 
   GetOrderDetailsUsecase(this.repository);
 
+  // --- اصلاح شد: call(GetOrderDetailsParams params) ---
   @override
   Future<Either<Failure, OrderEntity>> call(
       GetOrderDetailsParams params) async {
-    return await repository.getOrderDetails(params.orderId);
+    // --- اصلاح شد: repository.getOrderDetails(params) ---
+    return await repository.getOrderDetails(params);
   }
 }
 
