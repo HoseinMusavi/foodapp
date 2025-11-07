@@ -23,6 +23,7 @@ import 'package:customer_app/features/checkout/presentation/pages/checkout_summa
 // --- ایمپورت‌های جدید ---
 import 'package:customer_app/features/order/presentation/cubit/order_history_cubit.dart';
 import 'package:customer_app/features/order/presentation/pages/submit_review_page.dart';
+import 'package:customer_app/features/store/presentation/pages/store_reviews_page.dart'; // <-- ایمپورت جدید (بخش ۳)
 // ---
 
 void main() async {
@@ -43,15 +44,12 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // --- اصلاح شد: استفاده از MultiBlocProvider ---
     return MultiBlocProvider(
       providers: [
         BlocProvider(
-          // سبد خرید بلافاصله لود می‌شود
           create: (context) => di.sl<CartBloc>()..add(CartStarted()),
         ),
         BlocProvider(
-          // تاریخچه سفارشات ایجاد می‌شود، اما منتظر لاگین می‌ماند
           create: (context) => di.sl<OrderHistoryCubit>(), 
         ),
       ],
@@ -70,7 +68,6 @@ class MyApp extends StatelessWidget {
         onGenerateRoute: _onGenerateRoute,
       ),
     );
-    // --- پایان اصلاح ---
   }
 
   Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
@@ -111,19 +108,34 @@ class MyApp extends StatelessWidget {
           builder: (_) => const OrderTrackingPage(),
         );
         
-      // --- مسیر جدید اضافه شد (بخش ۲) ---
       case '/submit-review':
-        // اطمینان از اینکه آرگومان‌ها معتبر هستند
         if (settings.arguments is OrderEntity) {
           final order = settings.arguments as OrderEntity;
           return MaterialPageRoute(
             builder: (_) => SubmitReviewPage(order: order),
-            // ما OrderHistoryCubit را پاس نمی‌دهیم، چون از قبل در main.dart
-            // فراهم شده و در SubmitReviewPage (از طریق context.read) قابل دسترسی است.
           );
         } else {
           return MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(), body: const Center(child: Text('خطا: سفارش معتبر نیست.'))));
         }
+
+      // --- مسیر جدید اضافه شد (بخش ۳) ---
+      case '/store-reviews':
+        // ما storeId و storeName را به عنوان Map پاس خواهیم داد
+        if (settings.arguments is Map<String, dynamic>) {
+          final args = settings.arguments as Map<String, dynamic>;
+          final int? storeId = args['storeId'];
+          final String? storeName = args['storeName'];
+
+          if (storeId != null && storeName != null) {
+            return MaterialPageRoute(
+              builder: (_) => StoreReviewsPage(
+                storeId: storeId,
+                storeName: storeName,
+              ),
+            );
+          }
+        }
+        return MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(), body: const Center(child: Text('خطا: شناسه رستوران نامعتبر است.'))));
       // ---
 
       default:
@@ -144,13 +156,11 @@ class AuthGate extends StatelessWidget {
         final session = snapshot.data?.session;
         if (session != null) {
           
-          // --- واکشی اطلاعات مشتری ---
           final customerState = di.sl<CustomerCubit>().state;
           if (customerState is CustomerInitial) {
             di.sl<CustomerCubit>().fetchCustomerDetails();
           }
           
-          // --- واکشی سبد خرید ---
           try {
             final cartState = context.read<CartBloc>().state;
             if(cartState is! CartLoaded && cartState is! CartLoading){
@@ -161,22 +171,17 @@ class AuthGate extends StatelessWidget {
             context.read<CartBloc>().add(CartStarted());
           }
 
-          // --- اصلاح شد: واکشی تاریخچه سفارشات ---
-          // حالا که Provider در سطح بالا قرار دارد، می‌توانیم آن را فراخوانی کنیم
           try {
             final orderState = context.read<OrderHistoryCubit>().state;
             if (orderState is OrderHistoryInitial) {
                context.read<OrderHistoryCubit>().fetchOrderHistory();
             }
           } catch (e) {
-            // این خطا طبیعی است اگر Provider هنوز در حال ساخت باشد
             print("AuthGate: Could not read OrderHistoryCubit state on login: $e");
           }
-          // --- پایان اصلاح ---
 
           return const MainShell();
         } else {
-          // Reset cart on logout
           if (context.mounted) {
             try {
               context.read<CartBloc>().add(CartStarted(forceRefresh: true));
