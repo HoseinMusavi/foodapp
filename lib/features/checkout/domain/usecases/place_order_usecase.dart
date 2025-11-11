@@ -1,29 +1,28 @@
+// lib/features/checkout/domain/usecases/place_order_usecase.dart
+
 import 'package:customer_app/core/error/failure.dart';
 import 'package:customer_app/core/usecase/usecase.dart';
-import 'package:customer_app/features/checkout/domain/repositories/checkout_repository.dart';
 import 'package:customer_app/features/customer/domain/entities/address_entity.dart';
-// import 'package:customer_app/features/checkout/domain/entities/order_entity.dart'; // این احتمالا لازم نیست
 import 'package:dartz/dartz.dart';
 import 'package:equatable/equatable.dart';
 
-// Use case for placing an order
-// It returns the order ID (int) on success
-class PlaceOrderUsecase extends UseCase<int, PlaceOrderParams> { // <-- نوع برگشتی اصلاح شد به int
+import '../repositories/checkout_repository.dart';
+
+class PlaceOrderUsecase implements UseCase<int, PlaceOrderParams> {
   final CheckoutRepository repository;
 
   PlaceOrderUsecase(this.repository);
 
   @override
-  Future<Either<Failure, int>> call(PlaceOrderParams params) async { // <-- نوع برگشتی اصلاح شد به int
-    return await repository.placeOrder( // <-- فراخوانی متد ریپازیتوری
-      address: params.address,
-      couponCode: params.couponCode,
-      notes: params.notes,
-    );
+  Future<Either<Failure, int>> call(PlaceOrderParams params) async {
+    // --- اصلاح شد: ---
+    // یوزکیس باید آبجکت params را مستقیماً به ریپازیتوری پاس دهد
+    // (قبلاً به اشتباه تلاش می‌کرد پارامترها را باز کند)
+    return await repository.placeOrder(params);
+    // --- پایان اصلاح ---
   }
 }
 
-// Parameters required for placing an order
 class PlaceOrderParams extends Equatable {
   final AddressEntity address;
   final String? couponCode;

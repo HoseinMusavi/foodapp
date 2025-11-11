@@ -1,4 +1,4 @@
-import 'package:customer_app/core/di/service_locator.dart';
+import 'package:customer_app/core/di/service_locator.dart' as di; // service_locator.dart as di
 import 'package:customer_app/features/cart/presentation/bloc/cart_bloc.dart';
 import 'package:customer_app/features/checkout/presentation/cubit/checkout_cubit.dart';
 import 'package:customer_app/features/customer/domain/entities/address_entity.dart';
@@ -18,6 +18,11 @@ class CheckoutSummaryPage extends StatefulWidget {
 class _CheckoutSummaryPageState extends State<CheckoutSummaryPage> {
   final _couponController = TextEditingController();
   final _notesController = TextEditingController();
+
+  // --- متغیرهای جدید برای نگه‌داشتن وضعیت ---
+  double _discountAmount = 0.0;
+  String _validatedCouponCode = '';
+  // ---
 
   @override
   void dispose() {
@@ -44,21 +49,23 @@ class _CheckoutSummaryPageState extends State<CheckoutSummaryPage> {
       );
     }
 
-    double finalTotalPrice = cart.totalPrice;
-    double deliveryFee = 0;
-    double discountAmount = 0;
+    // --- اصلاح شد: اینها بر اساس استیت محاسبه می‌شوند ---
+    // TODO: هزینه ارسال را از بک‌اند بگیرید
+    double deliveryFee = 0; 
+    double finalTotalPrice = cart.totalPrice + deliveryFee - _discountAmount;
+    // ---
 
     return BlocProvider(
-      create: (context) => sl<CheckoutCubit>(),
+      create: (context) => di.sl<CheckoutCubit>(), // از di.sl استفاده شد
       child: Scaffold(
         appBar: AppBar(
           title: const Text('خلاصه سفارش و پرداخت'),
         ),
         body: BlocConsumer<CheckoutCubit, CheckoutState>(
           listener: (context, state) {
+            // --- listener برای ثبت نهایی سفارش ---
             if (state is CheckoutSuccess) {
-              // **** Removed const and forceRefresh ****
-              context.read<CartBloc>().add(CartStarted());
+              context.read<CartBloc>().add(CartStarted(forceRefresh: true)); // forceRefresh اضافه شد
 
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -74,8 +81,7 @@ class _CheckoutSummaryPageState extends State<CheckoutSummaryPage> {
                  (route) => route.isFirst,
                  arguments: state.orderId,
               );
-            }
-            if (state is CheckoutFailure) {
+            } else if (state is CheckoutFailure) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text('خطا در ثبت سفارش: ${state.message}'),
@@ -84,9 +90,54 @@ class _CheckoutSummaryPageState extends State<CheckoutSummaryPage> {
                 ),
               );
             }
+            // --- listener جدید برای کد تخفیف ---
+            else if (state is CheckoutCouponValidating) {
+              ScaffoldMessenger.of(context)
+                ..hideCurrentSnackBar()
+                ..showSnackBar(
+                  const SnackBar(
+                    content: Row(
+                      children: [
+                        CircularProgressIndicator(color: Colors.white),
+                        SizedBox(width: 16),
+                        Text('در حال بررسی کد تخفیف...'),
+                      ],
+                    ),
+                    backgroundColor: Colors.blueGrey,
+                  ),
+                );
+            } else if (state is CheckoutCouponFailure) {
+              ScaffoldMessenger.of(context)
+                ..hideCurrentSnackBar()
+                ..showSnackBar(
+                  SnackBar(
+                    content: Text(state.message),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+            } else if (state is CheckoutCouponSuccess) {
+              ScaffoldMessenger.of(context)
+                ..hideCurrentSnackBar()
+                ..showSnackBar(
+                  SnackBar(
+                    content: Text('تخفیف ${state.discountAmount} تومان اعمال شد.'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              // ذخیره مقادیر موفق در State ویجت
+              setState(() {
+                _discountAmount = state.discountAmount;
+                _validatedCouponCode = _couponController.text.trim();
+              });
+            }
+            // --- پایان بخش جدید ---
           },
           builder: (context, state) {
+            // --- اصلاح شد: isProcessing حالا شامل اعتبارسنجی کوپن هم می‌شود ---
             final isProcessing = state is CheckoutProcessing;
+            final isCouponValidating = state is CheckoutCouponValidating;
+            final isCouponApplied = state is CheckoutCouponSuccess;
+            // ---
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 80.0),
@@ -106,15 +157,15 @@ class _CheckoutSummaryPageState extends State<CheckoutSummaryPage> {
                     ),
                     trailing: TextButton(
                       child: const Text('تغییر آدرس'),
-                      onPressed: isProcessing ? null : () {
-                         Navigator.pop(context);
-                      },
+                      onPressed: isProcessing ? null : () { // در هنگام ثبت نهایی غیرفعال شود
+                           Navigator.pop(context);
+                         },
                     ),
                   ),
                 ),
                 const SizedBox(height: 16),
 
-                 _buildSectionCard(
+                _buildSectionCard(
                   context,
                   title: 'محصولات (${cart.totalItems} کالا)',
                   icon: Icons.shopping_basket_outlined,
@@ -125,40 +176,74 @@ class _CheckoutSummaryPageState extends State<CheckoutSummaryPage> {
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.6, color: Colors.grey[800]),
                     ),
                   )
-                 ),
-                 const SizedBox(height: 16),
+                ),
+                const SizedBox(height: 16),
 
+                // --- بخش کد تخفیف اصلاح شد ---
                 _buildSectionCard(
                   context,
                   title: 'کد تخفیف',
                   icon: Icons.discount_outlined,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12.0),
-                    child: Row(
-                     children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _couponController,
-                            enabled: !isProcessing,
-                            decoration: const InputDecoration(
-                              hintText: 'کد تخفیف (اختیاری)',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            ),
-                            textInputAction: TextInputAction.done,
-                            onSubmitted: (_) => _applyCoupon(context, isProcessing),
-                          ),
+                    child: Column(
+                      children: [
+                        Row(
+                         children: [
+                           Expanded(
+                             child: TextField(
+                               controller: _couponController,
+                               // اگر در حال پردازش *یا* کوپن اعمال شده است، غیرفعال کن
+                               enabled: !isProcessing && !isCouponApplied, 
+                               decoration: InputDecoration(
+                                 hintText: 'کد تخفیف (اختیاری)',
+                                 border: const OutlineInputBorder(),
+                                 isDense: true,
+                                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                 // اگر کوپن اعمال شده، سبز کن
+                                 fillColor: isCouponApplied ? Colors.green.withAlpha(50) : null,
+                                 filled: isCouponApplied,
+                               ),
+                               textInputAction: TextInputAction.done,
+                               onSubmitted: (_) => _applyCoupon(context, cart.totalPrice, isProcessing || isCouponValidating),
+                               onChanged: (value) {
+                                  // اگر کاربر کد را عوض کرد، تخفیف اعمال شده را ریست کن
+                                  if (_discountAmount > 0 || _validatedCouponCode.isNotEmpty) {
+                                    setState(() {
+                                      _discountAmount = 0;
+                                      _validatedCouponCode = '';
+                                    });
+                                    // استیت کیوبیت را هم ریست کن (با فراخوانی تابع با کد خالی)
+                                    context.read<CheckoutCubit>().applyCoupon(couponCode: '', subtotal: cart.totalPrice);
+                                  }
+                                },
+                             ),
+                           ),
+                           const SizedBox(width: 8),
+                           ElevatedButton(
+                             // اگر در حال پردازش یا اعتبارسنجی یا اعمال شده، غیرفعال کن
+                             onPressed: isProcessing || isCouponValidating || isCouponApplied ? null : () => _applyCoupon(context, cart.totalPrice, false),
+                             // اگر در حال اعتبارسنجی است لودینگ نشان بده
+                             child: isCouponValidating
+                                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                                : (isCouponApplied ? const Icon(Icons.check) : const Text('اعمال')),
+                           )
+                         ],
                         ),
-                        const SizedBox(width: 8),
-                        ElevatedButton(
-                          onPressed: isProcessing ? null : () => _applyCoupon(context, isProcessing),
-                          child: const Text('اعمال'),
-                        )
+                        // نمایش پیام خطا از کیوبیت
+                        if (state is CheckoutCouponFailure)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Text(
+                              state.message,
+                              style: TextStyle(color: Theme.of(context).colorScheme.error),
+                            ),
+                          ),
                       ],
                     ),
                   )
                 ),
+                // --- پایان بخش اصلاح شده ---
                 const SizedBox(height: 16),
 
                 _buildSectionCard(
@@ -169,7 +254,7 @@ class _CheckoutSummaryPageState extends State<CheckoutSummaryPage> {
                     padding: const EdgeInsets.symmetric(vertical: 12.0),
                     child: TextField(
                       controller: _notesController,
-                      enabled: !isProcessing,
+                      enabled: !isProcessing, // در هنگام ثبت نهایی غیرفعال شود
                       maxLines: 3,
                       minLines: 1,
                       textInputAction: TextInputAction.done,
@@ -186,39 +271,43 @@ class _CheckoutSummaryPageState extends State<CheckoutSummaryPage> {
 
                 Card(
                   elevation: 0,
+                  // اصلاح شد: withAlpha(77)
                   color: Theme.of(context).colorScheme.secondaryContainer.withAlpha(77),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   child: Padding(
-                     padding: const EdgeInsets.all(16.0),
-                     child: Column(
-                      children: [
-                         _buildPriceRow(context, 'جمع کل سبد خرید', cart.totalPrice, formatCurrency),
-                         _buildPriceRow(context, 'هزینه ارسال', deliveryFee, formatCurrency),
-                         _buildPriceRow(context, 'تخفیف اعمال شده', discountAmount, formatCurrency, isDiscount: true),
-                         const Divider(height: 24, thickness: 0.5),
-                         _buildPriceRow(context, 'مبلغ نهایی قابل پرداخت', finalTotalPrice, formatCurrency, isTotal: true),
-                      ],
-                     ),
+                       padding: const EdgeInsets.all(16.0),
+                       child: Column(
+                         children: [
+                           _buildPriceRow(context, 'جمع کل سبد خرید', cart.totalPrice, formatCurrency),
+                           _buildPriceRow(context, 'هزینه ارسال', deliveryFee, formatCurrency),
+                           // --- اصلاح شد: از متغیر _discountAmount استفاده می‌کند ---
+                           _buildPriceRow(context, 'تخفیف اعمال شده', _discountAmount, formatCurrency, isDiscount: true),
+                           const Divider(height: 24, thickness: 0.5),
+                           // --- اصلاح شد: از متغیر finalTotalPrice استفاده می‌کند ---
+                           _buildPriceRow(context, 'مبلغ نهایی قابل پرداخت', finalTotalPrice, formatCurrency, isTotal: true),
+                         ],
+                       ),
                   )
                 ),
-                 const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
-                 ElevatedButton.icon(
-                   icon: isProcessing
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.check_circle_outline),
-                   label: Text(isProcessing ? 'در حال ثبت سفارش...' : 'پرداخت و ثبت نهایی'),
-                   style: ElevatedButton.styleFrom(
-                     minimumSize: const Size(double.infinity, 50),
-                   ),
-                   onPressed: isProcessing ? null : () {
-                      context.read<CheckoutCubit>().submitOrder(
-                        address: widget.selectedAddress,
-                        couponCode: _couponController.text.trim().isEmpty ? null : _couponController.text.trim(),
-                        notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-                      );
-                   },
-                 ),
+                ElevatedButton.icon(
+                  icon: isProcessing
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.check_circle_outline),
+                  label: Text(isProcessing ? 'در حال ثبت سفارش...' : 'پرداخت و ثبت نهایی'),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 50),
+                  ),
+                  onPressed: isProcessing || isCouponValidating ? null : () { // هنگام اعتبارسنجی کوپن هم غیرفعال شود
+                       context.read<CheckoutCubit>().submitOrder(
+                         address: widget.selectedAddress,
+                         // --- اصلاح شد: _validatedCouponCode ارسال می‌شود ---
+                         couponCode: _validatedCouponCode.isEmpty ? null : _validatedCouponCode,
+                         notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
+                       );
+                     },
+                ),
               ],
             );
           },
@@ -256,19 +345,19 @@ class _CheckoutSummaryPageState extends State<CheckoutSummaryPage> {
   }
 
   Widget _buildPriceRow(BuildContext context, String title, double amount, NumberFormat format, {bool isTotal = false, bool isDiscount = false}) {
-     final style = isTotal
-        ? Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)
-        : Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[800]);
-     final amountColor = isDiscount && amount > 0
-        ? Colors.redAccent[700]
-        : (isTotal ? Theme.of(context).colorScheme.primary : null);
+    final style = isTotal
+      ? Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)
+      : Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[800]);
+    final amountColor = isDiscount && amount > 0
+      ? Colors.redAccent[700]
+      : (isTotal ? Theme.of(context).colorScheme.primary : Colors.grey[800]); // اصلاح شد: رنگ خاکستری برای مقادیر عادی
 
-      String formattedAmount = format.format(amount);
-      if (isDiscount && amount > 0) {
-         formattedAmount = '- $formattedAmount';
-      } else if (isDiscount && amount == 0) {
-        formattedAmount = '۰${format.currencyName}';
-      }
+     String formattedAmount = format.format(amount);
+     if (isDiscount && amount > 0) {
+       formattedAmount = '- $formattedAmount';
+     } else if (isDiscount && amount == 0) {
+       formattedAmount = '۰${format.currencyName}';
+     }
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6.0),
@@ -277,31 +366,30 @@ class _CheckoutSummaryPageState extends State<CheckoutSummaryPage> {
         children: [
           Text(title, style: style),
           Text(
-             formattedAmount,
-             style: style?.copyWith(color: amountColor, fontWeight: isTotal ? FontWeight.bold : null, letterSpacing: 0.5),
-             // **** Corrected TextDirection ****
-            //  textDirection: TextDirection.RTL,
-
+            formattedAmount,
+            style: style?.copyWith(color: amountColor, fontWeight: isTotal ? FontWeight.bold : FontWeight.w600, letterSpacing: 0.5), // اصلاح شد: fontWeight
           ),
         ],
       ),
     );
   }
 
-  void _applyCoupon(BuildContext context, bool isProcessing) {
-      if (isProcessing) return;
-      final code = _couponController.text.trim();
-      if (code.isNotEmpty) {
-        // TODO: Implement coupon validation and application logic
-        print("Applying coupon: $code");
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('قابلیت کد تخفیف هنوز پیاده‌سازی نشده است.')),
-        );
-      } else {
-         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('لطفا کد تخفیف را وارد کنید.')),
-        );
-      }
-      FocusScope.of(context).unfocus();
+  // --- تابع اعمال کوپن اصلاح و تکمیل شد ---
+  void _applyCoupon(BuildContext context, double subtotal, bool isProcessing) {
+     if (isProcessing) return; // اگر هر نوع پردازشی در جریان است، خارج شو
+     final code = _couponController.text.trim();
+     if (code.isNotEmpty) {
+       // --- فراخوانی متد از کیوبیت ---
+       context.read<CheckoutCubit>().applyCoupon(
+             couponCode: code,
+             subtotal: subtotal, // --- اصلاح شد: totalPrice سبد خرید پاس داده شد ---
+           );
+     } else {
+       ScaffoldMessenger.of(context).showSnackBar(
+         const SnackBar(content: Text('لطفا کد تخفیف را وارد کنید.')),
+       );
+     }
+     FocusScope.of(context).unfocus();
   }
+  // ---
 }

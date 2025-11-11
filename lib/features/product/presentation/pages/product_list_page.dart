@@ -63,12 +63,15 @@ class _ProductViewState extends State<ProductView> {
 
   void _scrollToCategoryChip(int index) async {
      if (_categoryScrollController.hasClients) {
-        final state = context.read<ProductCubit>().state;
-        if (state is! ProductLoaded || state.categories.isEmpty) return;
-        double totalWidth = _categoryScrollController.position.maxScrollExtent;
-        double targetScrollOffset = (totalWidth / state.categories.length) * index;
-        targetScrollOffset = targetScrollOffset.clamp(0.0, totalWidth);
-        _categoryScrollController.animateTo( targetScrollOffset, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut, );
+       final state = context.read<ProductCubit>().state;
+       if (state is! ProductLoaded || state.categories.isEmpty) return;
+       double totalWidth = _categoryScrollController.position.maxScrollExtent;
+       // اطمینان از عدم تقسیم بر صفر اگر فقط یک دسته بندی وجود داشته باشد
+       double targetScrollOffset = (state.categories.length > 1) 
+          ? (totalWidth / (state.categories.length - 1)) * index 
+          : 0.0;
+       targetScrollOffset = targetScrollOffset.clamp(0.0, totalWidth);
+       _categoryScrollController.animateTo( targetScrollOffset, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut, );
      }
   }
 
@@ -85,7 +88,9 @@ class _ProductViewState extends State<ProductView> {
     if (effectiveKey != null && effectiveKey.currentContext != null) {
       setState(() { _isScrollingProgrammatically = true; });
       // Calculate header height dynamically
-      double headerHeight = kToolbarHeight + 60.0 + MediaQuery.of(context).padding.top; // AppBar + Category Header + SafeArea
+      // kToolbarHeight (ارتفاع AppBar) + 60.0 (ارتفاع هدر دسته‌بندی) + ارتفاع SafeArea بالای صفحه
+      double headerHeight = kToolbarHeight + 60.0 + MediaQuery.of(context).padding.top; 
+      
       await Scrollable.ensureVisible(
         effectiveKey.currentContext!,
         duration: const Duration(milliseconds: 400),
@@ -93,95 +98,104 @@ class _ProductViewState extends State<ProductView> {
         alignment: 0.0, // Align top edge of the item
         alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
       );
-       // Adjust scroll after ensureVisible finishes, to account for sticky header
-       Future.delayed(const Duration(milliseconds: 50), () { // Shorter delay might work
-          if (_scrollController.hasClients) {
-             double currentOffset = _scrollController.offset;
-             // Find the actual position of the element again after ensureVisible
-             final box = effectiveKey.currentContext?.findRenderObject() as RenderBox?;
-             final position = box?.localToGlobal(Offset.zero, ancestor: context.findRenderObject());
-             if (position != null) {
-                double targetOffset = _scrollController.offset + position.dy - headerHeight - 10; // 10px padding below header
-                targetOffset = targetOffset < 0 ? 0 : targetOffset; // Ensure not negative
-                // Only scroll if significantly different to avoid jitter
-                if ((_scrollController.offset - targetOffset).abs() > 1.0) {
-                    _scrollController.animateTo(
-                       targetOffset,
-                       duration: const Duration(milliseconds: 200),
-                       curve: Curves.easeOut,
-                    );
-                }
-             }
+      
+      // Adjust scroll after ensureVisible finishes, to account for sticky header
+      // این تاخیر کوتاه اجازه می‌دهد تا ensureVisible تمام شود و سپس اسکرول را تنظیم کنیم
+      Future.delayed(const Duration(milliseconds: 50), () { 
+        if (_scrollController.hasClients) {
+          final box = effectiveKey.currentContext?.findRenderObject() as RenderBox?;
+          final position = box?.localToGlobal(Offset.zero, ancestor: context.findRenderObject());
+          
+          if (position != null) {
+            // محاسبه آفست هدف: آفست فعلی + موقعیت آیتم - ارتفاع هدر - 10 پیکسل پدینگ
+            double targetOffset = _scrollController.offset + position.dy - headerHeight - 10; 
+            targetOffset = targetOffset < 0 ? 0 : targetOffset; // اطمینان از اینکه آفست منفی نیست
+
+            // فقط در صورتی اسکرول کن که تفاوت قابل توجه باشد (جلوگیری از پرش)
+            if ((_scrollController.offset - targetOffset).abs() > 1.0) {
+              _scrollController.animateTo(
+                targetOffset,
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+              );
+            }
           }
-       });
-       Future.delayed(const Duration(milliseconds: 550), () {
-        if(mounted){ setState(() { _isScrollingProgrammatically = false; }); }
+        }
+      });
+      
+      // تاخیر برای فعال کردن مجدد _onScroll
+      Future.delayed(const Duration(milliseconds: 550), () {
+       if(mounted){ setState(() { _isScrollingProgrammatically = false; }); }
       });
     } else {
       print("WARN: Could not find key or context for category ID: $categoryId");
     }
   }
 
- void _onScroll() {
+  void _onScroll() {
     if (_isScrollingProgrammatically || !_scrollController.hasClients) return;
 
     final state = context.read<ProductCubit>().state;
     if (state is! ProductLoaded || state.categories.isEmpty) return;
 
     int? currentTopCategoryIndex;
-    // Calculate the reference point (bottom edge of the sticky header)
+    // محاسبه نقطه مرجع (لبه پایینی هدر چسبان)
     double headerBottomEdge = kToolbarHeight + 60.0 + MediaQuery.of(context).padding.top;
-    double closestOffsetToHeader = double.infinity; // Find the title closest *below* the header
+    double closestOffsetToHeader = double.infinity; // یافتن نزدیکترین عنوان *زیر* هدر
 
-    // Iterate through visible category titles using the keys
     for (var entry in _categoryTitleKeys.entries) {
       final keyContext = entry.value.currentContext;
       if (keyContext != null) {
         final box = keyContext.findRenderObject() as RenderBox?;
         final position = box?.localToGlobal(Offset.zero, ancestor: context.findRenderObject());
         if (position != null) {
-          // Offset of the category title's top edge relative to the header bottom
+          // آفست لبه بالایی عنوان دسته بندی نسبت به لبه پایینی هدر
           double offsetFromHeader = position.dy - headerBottomEdge;
 
-           // Consider titles that are slightly above or below the header edge
-          if (offsetFromHeader < closestOffsetToHeader && offsetFromHeader > - (box?.size.height ?? 50)) { // Check if title top is above header bottom but not too far above
-              closestOffsetToHeader = offsetFromHeader;
-              int foundIndex = state.categories.indexWhere((cat) => cat.id == entry.key);
-              if (foundIndex != -1) {
-                  currentTopCategoryIndex = foundIndex;
-              }
-              // Handle "Uncategorized" (-1 key)
-              else if (entry.key == -1) {
-                   // Determine its visual index if you added an "Uncategorized" chip
-                   // e.g., currentTopCategoryIndex = state.categories.length;
-              }
+          // عناوینی را در نظر بگیر که کمی بالا یا پایین لبه هدر هستند
+          if (offsetFromHeader < closestOffsetToHeader && offsetFromHeader > - (box?.size.height ?? 50)) { 
+            closestOffsetToHeader = offsetFromHeader;
+            int foundIndex = state.categories.indexWhere((cat) => cat.id == entry.key);
+            if (foundIndex != -1) {
+              currentTopCategoryIndex = foundIndex;
+            }
+            // Handle "Uncategorized" (-1 key)
+            else if (entry.key == -1) {
+               int uncategorizedIndex = state.categories.indexWhere((cat) => cat.id == null);
+               if(uncategorizedIndex != -1) {
+                  currentTopCategoryIndex = uncategorizedIndex;
+               }
+            }
           }
         }
       }
     }
 
-    // Default to 0 if near the top or no category found near the header
+    // اگر نزدیک بالا بود یا هیچ دسته‌بندی پیدا نشد، 0 را در نظر بگیر
     currentTopCategoryIndex ??= (_scrollController.offset < 100) ? 0 : _selectedCategoryIndex;
 
 
     if (currentTopCategoryIndex != _selectedCategoryIndex) {
-       if (mounted) {
-         setState(() {
-           // ✨ فیکس: علامت ! غیر ضروری حذف شد
-           _selectedCategoryIndex = currentTopCategoryIndex!;
-         });
-         _scrollToCategoryChip(currentTopCategoryIndex);
-       }
+        if (mounted) {
+          setState(() {
+            _selectedCategoryIndex = currentTopCategoryIndex!;
+          });
+          _scrollToCategoryChip(currentTopCategoryIndex);
+        }
     }
-}
+  }
 
 
   void _calculateCategoryStartIndicesAndKeys(List<ProductEntity> products, List<ProductCategoryEntity> categories) {
     print("Recalculating Category Indices and Keys...");
     final newStartIndexMap = <int, int>{}; // Use local map first
     final newTitleKeys = <int, GlobalKey>{};
-    if (products.isEmpty) {
-        if(mounted) setState(() { _categoryStartIndexMap = newStartIndexMap; }); // Update state even if empty
+    
+    if (products.isEmpty && categories.isEmpty) {
+        if(mounted) setState(() { 
+          _categoryStartIndexMap = newStartIndexMap; 
+          _categoryTitleKeys.clear();
+        });
         return;
     }
 
@@ -193,24 +207,28 @@ class _ProductViewState extends State<ProductView> {
         }
     }
 
-    int lastIndexAssigned = 0; // Keep track for categories without products
+    int lastIndexAssigned = 0; // پیگیری برای دسته‌بندی‌های بدون محصول
     for (var category in categories) {
-        newTitleKeys[category.id] = GlobalKey(); // Create key regardless of products
+        newTitleKeys[category.id] = GlobalKey(); // ساخت کلید بدون توجه به محصول
         newStartIndexMap[category.id] = tempFirstIndexMap[category.id] ?? lastIndexAssigned;
         lastIndexAssigned = newStartIndexMap[category.id]!;
     }
 
-    // Handle products with null categoryId
+    // مدیریت محصولات با categoryId null
     if (tempFirstIndexMap.containsKey(null)) {
-        newStartIndexMap[-1] = tempFirstIndexMap[null]!; // Use -1 for null category key
+        newStartIndexMap[-1] = tempFirstIndexMap[null]!; // استفاده از 1- برای کلید null
         newTitleKeys[-1] = GlobalKey();
+        // اگر دسته بندی "سایر" در categories وجود ندارد، آن را به صورت مجازی اضافه کن
+        if (!categories.any((c) => c.id == null)) {
+           // این بخش به منطق نمایش "سایر" در هدر بستگی دارد
+           // اگر هدر "سایر" ندارد، نیازی به این کار نیست
+        }
     }
 
-     // Update the state variables after calculation
+    // به‌روزرسانی متغیرهای state
     if (mounted) {
         setState(() {
             _categoryStartIndexMap = newStartIndexMap;
-            // Clear old keys and add new ones (avoids keeping stale keys)
             _categoryTitleKeys.clear();
             _categoryTitleKeys.addAll(newTitleKeys);
         });
@@ -218,7 +236,7 @@ class _ProductViewState extends State<ProductView> {
 
     print("Category Start Indices Updated: $_categoryStartIndexMap");
     print("Category Title Keys Updated: ${_categoryTitleKeys.keys}");
-}
+  }
 
 
   @override
@@ -229,36 +247,37 @@ class _ProductViewState extends State<ProductView> {
       body: BlocConsumer<ProductCubit, ProductState>(
         listener: (context, state) {
           if (state is ProductLoaded) {
-             // Calculate keys/indices when data is loaded
-             _calculateCategoryStartIndicesAndKeys(state.products, state.categories);
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                  // Trigger initial scroll check after build
-                  _onScroll();
-              });
+            // محاسبه کلیدها/اندیس‌ها هنگام بارگذاری داده
+            _calculateCategoryStartIndicesAndKeys(state.products, state.categories);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+                // اجرای بررسی اسکرول اولیه پس از ساخت
+                _onScroll();
+            });
           }
-          // Rest of the listener logic...
-          if (state is ProductLoaded && state.isLoadingOptions == false && state.currentOptions != null && _viewingOptionsForProductId != null) { /* ... */
-              ProductEntity? product; try { product = state.products.firstWhere((p) => p.id == _viewingOptionsForProductId); } catch (e) { product = null; print("Error finding product: $e"); }
-              if (product != null) {
-                  if (state.currentOptions!.isNotEmpty) { _showOptionsModal(context, product, state.currentOptions!, cartBloc); }
-                  else { cartBloc.add( CartProductAdded(product: product, selectedOptions: const []), ); ScaffoldMessenger.of(context).showSnackBar( SnackBar(content: Text('${product.name} به سبد خرید اضافه شد')), ); }
-              }
-              _viewingOptionsForProductId = null;
-           } else if (state is ProductError && _viewingOptionsForProductId != null && state.message.contains('گزینه‌ها')) { /* ... */
-               ScaffoldMessenger.of(context).showSnackBar( SnackBar(content: Text(state.message), backgroundColor: Colors.red), ); _viewingOptionsForProductId = null;
-           }
+          
+          // ... بقیه منطق listener ...
+          if (state is ProductLoaded && state.isLoadingOptions == false && state.currentOptions != null && _viewingOptionsForProductId != null) { 
+            ProductEntity? product; try { product = state.products.firstWhere((p) => p.id == _viewingOptionsForProductId); } catch (e) { product = null; print("Error finding product: $e"); }
+            if (product != null) {
+                if (state.currentOptions!.isNotEmpty) { _showOptionsModal(context, product, state.currentOptions!, cartBloc); }
+                else { cartBloc.add( CartProductAdded(product: product, selectedOptions: const []), ); ScaffoldMessenger.of(context).showSnackBar( SnackBar(content: Text('${product.name} به سبد خرید اضافه شد')), ); }
+            }
+            _viewingOptionsForProductId = null;
+            } else if (state is ProductError && _viewingOptionsForProductId != null && state.message.contains('گزینه‌ها')) { 
+              ScaffoldMessenger.of(context).showSnackBar( SnackBar(content: Text(state.message), backgroundColor: Colors.red), ); _viewingOptionsForProductId = null;
+            }
         },
         builder: (context, state) {
           final previousState = context.read<ProductCubit>().state;
           final bool hasPreviousProducts = previousState is ProductLoaded && previousState.products.isNotEmpty;
 
           if (state is ProductInitial || (state is ProductLoading && !hasPreviousProducts)) {
-              return const Center(child: CircularProgressIndicator());
+            return const Center(child: CircularProgressIndicator());
           }
           if (state is ProductError) {
-            // Provide Scaffold here too for consistent AppBar
+            // ارائه Scaffold در اینجا برای AppBar یکپارچه
             return Scaffold(
-              appBar: AppBar(title: Text(widget.store.name)), // Simple AppBar on error
+              appBar: AppBar(title: Text(widget.store.name)), // AppBar ساده در حالت خطا
               body: Center( child: Padding( padding: const EdgeInsets.all(16.0), child: Text("خطا در بارگذاری منو: ${state.message}", textAlign: TextAlign.center), ) )
             );
           }
@@ -269,15 +288,12 @@ class _ProductViewState extends State<ProductView> {
 
           if (loadedState == null){ return Scaffold(appBar: AppBar(title: Text(widget.store.name)), body: const Center(child: Text('وضعیت نامشخص'))); }
 
-          // Ensure keys/indices are calculated *before* building Slivers that use them
-          // Calculation might have already happened in listener, but check again
-           if (_categoryTitleKeys.isEmpty && loadedState.categories.isNotEmpty) {
-               _calculateCategoryStartIndicesAndKeys(loadedState.products, loadedState.categories);
-               // Rebuild after calculation if keys were just created
-               WidgetsBinding.instance.addPostFrameCallback((_) { if(mounted) setState((){}); });
-               // Show loading briefly while keys initialize? Or handle null keys in buildProductSliverList
-               // return const Center(child: Text("Initializing...")); // Or handle gracefully below
-           }
+            // اطمینان از محاسبه کلیدها/اندیس‌ها *قبل* از ساخت Slivers
+            if (_categoryTitleKeys.isEmpty && (loadedState.categories.isNotEmpty || loadedState.products.any((p) => p.categoryId == null))) {
+                _calculateCategoryStartIndicesAndKeys(loadedState.products, loadedState.categories);
+                // بازسازی پس از محاسبه اگر کلیدها تازه ساخته شدند
+                WidgetsBinding.instance.addPostFrameCallback((_) { if(mounted) setState((){}); });
+            }
 
 
           return Stack(
@@ -285,10 +301,14 @@ class _ProductViewState extends State<ProductView> {
               CustomScrollView(
                 controller: _scrollController,
                 slivers: [
-                  _buildImprovedSliverAppBar(context, widget.store),
+                  // --- ✨ اینجا ویجت AppBar اصلاح شده فراخوانی می‌شود ---
+                  _buildUxImprovedSliverAppBar(context, widget.store),
+                  
                   SliverPersistentHeader(
                     delegate: _CategoryHeaderDelegate(
                       categories: loadedState.categories,
+                      // TODO: افزودن دسته بندی "سایر" اگر محصولی با categoryId=null وجود دارد
+                      // categories: _getCategoriesWithUncategorized(loadedState), 
                       selectedIndex: _selectedCategoryIndex,
                       scrollController: _categoryScrollController,
                       onCategorySelected: (index) {
@@ -299,14 +319,13 @@ class _ProductViewState extends State<ProductView> {
                     ),
                     pinned: true,
                   ),
-                  // ✨ فیکس: پاس دادن map های state به ویجت لیست
                   _buildProductSliverList(context, loadedState, _categoryStartIndexMap, _categoryTitleKeys),
                 ],
               ),
               if (state is ProductLoaded && state.isLoadingOptions)
-                 Container( color: Colors.black.withAlpha((255 * 0.3).round()), child: const Center(child: CircularProgressIndicator(color: Colors.white)), ),
-              if (state is ProductLoading) // Show loading indicator during refresh
-                 Positioned( top: MediaQuery.of(context).padding.top + kToolbarHeight + 60, left: 0, right: 0, child: const LinearProgressIndicator(),),
+                Container( color: Colors.black.withAlpha((255 * 0.3).round()), child: const Center(child: CircularProgressIndicator(color: Colors.white)), ),
+              if (state is ProductLoading) // نمایش لودر هنگام رفرش
+                Positioned( top: MediaQuery.of(context).padding.top + kToolbarHeight + 60, left: 0, right: 0, child: const LinearProgressIndicator(),),
             ],
           );
         },
@@ -315,56 +334,166 @@ class _ProductViewState extends State<ProductView> {
   }
 
 
-  Widget _buildImprovedSliverAppBar(BuildContext context, StoreEntity store) {
+  // --- 💎 این ویجت به طور کامل برای بهبود UX بازنویسی شده است 💎 ---
+  Widget _buildUxImprovedSliverAppBar(BuildContext context, StoreEntity store) {
     final textTheme = Theme.of(context).textTheme;
-    // ✨ فیکس: متغیر colorScheme حذف شد
+    final colorScheme = Theme.of(context).colorScheme;
 
     return SliverAppBar(
       expandedHeight: 250.0,
       floating: false,
       pinned: true,
+      
+      // --- ✨ بهبود UX (بخش ۱): عنوان استاندارد برای حالت جمع‌شده ---
+      // این عنوان فقط زمانی که AppBar جمع است نمایش داده می‌شود.
+      title: Text(store.name, style: const TextStyle(fontSize: 16.0, fontWeight: FontWeight.bold)),
+      centerTitle: true, // عنوان را در مرکز قرار می‌دهد
+      // ---
+
       actions: [
-        IconButton(icon: const Icon(Icons.search), onPressed: () {/* TODO */}),
-        IconButton(icon: const Icon(Icons.info_outline), onPressed: () {/* TODO */}),
+        // دکمه‌های اطلاعات و جستجو حفظ شدند
+        IconButton(icon: const Icon(Icons.search), onPressed: () {/* TODO: Search */}),
+        IconButton(icon: const Icon(Icons.info_outline), onPressed: () {/* TODO: Store Info */}),
       ],
       flexibleSpace: FlexibleSpaceBar(
-        titlePadding: const EdgeInsetsDirectional.only(start: 72, bottom: 16),
-        title: Text( store.name, style: const TextStyle(fontSize: 16.0, shadows: [Shadow(color: Colors.black, blurRadius: 4)]), maxLines: 1, overflow: TextOverflow.ellipsis,),
-        background: Stack( fit: StackFit.expand, children: [
-            CustomNetworkImage( imageUrl: store.logoUrl, fit: BoxFit.cover, ),
-            // ✨ فیکس: withOpacity -> withAlpha
-            Container( decoration: BoxDecoration( gradient: LinearGradient( begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black.withAlpha((255 * 0.8).round())], stops: const [0.4, 1.0], ), ), ),
-            Positioned(
-              bottom: kToolbarHeight / 2 + 20,
-              left: 16.0,
-              right: 16.0,
-              child: Column( crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                  Row( crossAxisAlignment: CrossAxisAlignment.center, children: [
-                      Icon(Icons.star_rate_rounded, color: Colors.yellow[600], size: 20),
-                      const SizedBox(width: 4),
-                      Text( store.rating.toStringAsFixed(1), style: textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.bold), ),
-                      const SizedBox(width: 4),
-                      Text( '(${store.ratingCount}+)', style: textTheme.bodySmall?.copyWith(color: Colors.grey[300]), ),
-                      const Spacer(),
-                       // ✨ فیکس: withOpacity -> withAlpha
-                       Container( padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration( color: Colors.black.withAlpha((255 * 0.6).round()), borderRadius: BorderRadius.circular(16), ),
-                         child: Row( mainAxisSize: MainAxisSize.min, children: [
-                             Icon(Icons.timer_outlined, color: Colors.white, size: 16),
-                             const SizedBox(width: 5),
-                             Text( store.deliveryTimeEstimate, style: textTheme.bodySmall?.copyWith(color: Colors.white), ),
-                           ], ),
-                       )
-                    ], ),
-                   const SizedBox(height: 6),
-                  Text( store.cuisineType, style: textTheme.bodyMedium?.copyWith(color: Colors.grey[200]), maxLines: 1, overflow: TextOverflow.ellipsis,),
-                ], ),
+        // --- ❌ بهبود UX: عنوان خود FlexibleSpaceBar حذف شد ---
+        // title: Text( store.name, ... ), // <-- حذف شد چون سلسله مراتب بصری را خراب می‌کرد
+        
+        background: Stack(
+          fit: StackFit.expand,
+          children: [
+            // تصویر پس‌زمینه
+            CustomNetworkImage(
+              imageUrl: store.logoUrl ?? 'https://via.placeholder.com/400x200',
+              fit: BoxFit.cover,
             ),
-          ], ),
+            
+            // گرادیانت برای خوانایی متن
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withAlpha((255 * 0.3).round()),
+                    Colors.black.withAlpha((255 * 0.8).round())
+                  ],
+                  stops: const [0.0, 0.4, 1.0], // گرادیانت قوی‌تر در پایین
+                ),
+              ),
+            ),
+            
+            // محتوای اصلی هدر (نام، امتیاز، زمان)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16.0, left: 16.0, right: 16.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  
+                  // --- ✨ بهبود UX (بخش ۱): نام فروشگاه با فونت بزرگ ---
+                  // این نام اصلی فروشگاه در حالت باز است.
+                  Text(
+                    store.name,
+                    style: textTheme.headlineMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        shadows: [Shadow(color: Colors.black.withAlpha(150), blurRadius: 4, offset: Offset(0, 1))]
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  // ---
+
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // --- ✨ بهبود UX (بخش ۲): دکمه نظرات (قابل کلیک) ---
+                      // کل این بخش اکنون یک دکمه است
+                      InkWell(
+                        onTap: () {
+                          Navigator.pushNamed(
+                            context,
+                            '/store-reviews', // روت صفحه نظرات
+                            arguments: {
+                              'storeId': store.id,
+                              'storeName': store.name,
+                            },
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(8.0),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 2.0),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.star_rate_rounded, color: Colors.yellow[600], size: 20),
+                              const SizedBox(width: 4),
+                              Text(
+                                store.rating.toStringAsFixed(1),
+                                style: textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '(${store.ratingCount}+ نظر)', // متن واضح‌تر
+                                style: textTheme.bodySmall?.copyWith(color: Colors.grey[300]),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(Icons.chevron_right_rounded, color: Colors.grey[300], size: 16),
+                            ],
+                          ),
+                        ),
+                      ),
+                      // ---
+
+                      const Spacer(),
+                      
+                      // ویجت زمان تحویل (بدون تغییر)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withAlpha((255 * 0.6).round()),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.timer_outlined, color: Colors.white, size: 16),
+                            const SizedBox(width: 5),
+                            Text(
+                              store.deliveryTimeEstimate,
+                              style: textTheme.bodySmall?.copyWith(color: Colors.white),
+                            ),
+                          ],
+                        ),
+                      )
+                    ],
+                  ),
+                  
+                  // نمایش دسته‌بندی غذا (Cuisine)
+                   if(store.cuisineType.isNotEmpty)
+                     Padding(
+                       padding: const EdgeInsets.only(top: 6.0),
+                       child: Text(
+                         store.cuisineType,
+                         style: textTheme.bodyMedium?.copyWith(color: Colors.grey[200]),
+                         maxLines: 1,
+                         overflow: TextOverflow.ellipsis,
+                       ),
+                     ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
+  // --- 💎 پایان بخش اصلاح‌شده 💎 ---
 
-  // ✨ فیکس: دریافت map ها به عنوان پارامتر
+
   Widget _buildProductSliverList(BuildContext context, ProductLoaded state, Map<int, int> categoryStartIndexMap, Map<int, GlobalKey> categoryTitleKeys) {
      if (state.products.isEmpty) { return const SliverFillRemaining( child: Center(child: Text("محصولی یافت نشد.")) ); }
 
@@ -376,34 +505,31 @@ class _ProductViewState extends State<ProductView> {
             final product = state.products[index];
             final categoryId = product.categoryId;
 
-            // ✨ فیکس: استفاده از map های پاس داده شده
             int? categoryStartIndex = categoryStartIndexMap[categoryId ?? -1];
             bool isFirstItemInCategory = (index == categoryStartIndex);
-            // Handle case where key might not be ready yet during first build
             GlobalKey? categoryKey = categoryTitleKeys[categoryId ?? -1];
 
             final categoryName = categoryId == null
-              ? "سایر"
-              : state.categories
-                 .firstWhere((cat) => cat.id == categoryId, orElse: () => const ProductCategoryEntity(id: -1, storeId: -1, name: 'نامشخص'))
-                 .name;
+                ? "سایر" // نام پیش فرض برای محصولات بدون دسته بندی
+                : state.categories
+                    .firstWhere((cat) => cat.id == categoryId, orElse: () => const ProductCategoryEntity(id: -1, storeId: -1, name: 'نامشخص'))
+                    .name;
 
             return Column( crossAxisAlignment: CrossAxisAlignment.start, children: [
                 if (isFirstItemInCategory)
                   Padding(
-                    // Assign key only if it exists
                     key: categoryKey ?? ValueKey('category_title_${categoryId ?? -1}_$index'), // Fallback key
-                    padding: const EdgeInsets.only(top: 16, bottom: 12, right: 8, left: 8),
+                    padding: const EdgeInsets.only(top: 20, bottom: 12, right: 8, left: 8),
                     child: Text( categoryName, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600), ),
                   ),
-                 Padding(
-                   padding: const EdgeInsets.symmetric(vertical: 6.0),
-                   child: _ProductCard( product: product, onTap: () {
-                      setState(() { _viewingOptionsForProductId = product.id; });
-                      context.read<ProductCubit>().fetchProductOptions(product.id);
-                    }, ),
-                 ),
-                 if (index == state.products.length - 1) const SizedBox(height: 80),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6.0),
+                  child: _ProductCard( product: product, onTap: () {
+                    setState(() { _viewingOptionsForProductId = product.id; });
+                    context.read<ProductCubit>().fetchProductOptions(product.id);
+                  }, ),
+                ),
+                if (index == state.products.length - 1) const SizedBox(height: 80), // پدینگ در انتها
               ], );
           },
           childCount: state.products.length,
@@ -427,7 +553,7 @@ class _ProductCard extends StatelessWidget {
   final VoidCallback onTap;
   const _ProductCard({required this.product, required this.onTap});
   @override
-  Widget build(BuildContext context) { /* ... کد قبلی ... */
+  Widget build(BuildContext context) { 
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -451,13 +577,13 @@ class _ProductCard extends StatelessWidget {
                     if (product.description.isNotEmpty)
                       Padding( padding: const EdgeInsets.only(bottom: 8.0), child: Text( product.description, maxLines: 2, overflow: TextOverflow.ellipsis, style: textTheme.bodySmall?.copyWith(color: Colors.grey[700]), ), )
                     else
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 8), // اگر توضیحات نبود، فضا را حفظ کن
 
                     Row( children: [
-                        Text( '${product.finalPrice.toStringAsFixed(0)} ت', style: textTheme.bodyLarge?.copyWith( color: colorScheme.primary, fontWeight: FontWeight.bold, ), ),
-                        if (product.discountPrice != null && product.discountPrice! < product.price)
-                          Padding( padding: const EdgeInsets.only(right: 8.0), child: Text( '${product.price.toStringAsFixed(0)} ت', style: textTheme.bodyMedium?.copyWith( color: Colors.grey, decoration: TextDecoration.lineThrough, ), ), ),
-                      ], ),
+                      Text( '${product.finalPrice.toStringAsFixed(0)} ت', style: textTheme.bodyLarge?.copyWith( color: colorScheme.primary, fontWeight: FontWeight.bold, ), ),
+                      if (product.discountPrice != null && product.discountPrice! < product.price)
+                        Padding( padding: const EdgeInsets.only(right: 8.0), child: Text( '${product.price.toStringAsFixed(0)} ت', style: textTheme.bodyMedium?.copyWith( color: Colors.grey, decoration: TextDecoration.lineThrough, ), ), ),
+                    ], ),
                   ],
                 ),
               ),
@@ -481,25 +607,69 @@ class _CategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build( BuildContext context, double shrinkOffset, bool overlapsContent) {
-     if (categories.isEmpty) { return const SizedBox(height: 60); }
-    return Container( height: 60.0, decoration: BoxDecoration( color: Theme.of(context).scaffoldBackgroundColor, border: Border(bottom: BorderSide(color: Colors.grey[200]!, width: 1.0)) ),
-      child: ListView.builder( controller: scrollController, itemCount: categories.length, scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 8.0), itemBuilder: (context, index) {
+    // اگر دسته‌بندی خالی بود، یک فضای خالی 60 پیکسلی برگردان
+    if (categories.isEmpty) { 
+      return Container(
+         height: 60.0, 
+         color: Theme.of(context).scaffoldBackgroundColor,
+         // یک خط پایین اضافه می‌کنیم تا با حالت عادی یکسان باشد
+         decoration: BoxDecoration( 
+            color: Theme.of(context).scaffoldBackgroundColor, 
+            border: Border(bottom: BorderSide(color: Colors.grey[200]!, width: 1.0))
+         ),
+      ); 
+    }
+    
+    return Container( 
+      height: 60.0, 
+      decoration: BoxDecoration( 
+        color: Theme.of(context).scaffoldBackgroundColor, 
+        border: Border(bottom: BorderSide(color: Colors.grey[200]!, width: 1.0)) 
+      ),
+      child: ListView.builder( 
+        controller: scrollController, 
+        itemCount: categories.length, 
+        scrollDirection: Axis.horizontal, 
+        padding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 8.0), 
+        itemBuilder: (context, index) {
           final isSelected = index == selectedIndex;
-          return Padding( padding: const EdgeInsets.symmetric(horizontal: 4.0), child: ChoiceChip(
-              label: Text(categories[index].name), selected: isSelected,
+          return Padding( 
+            padding: const EdgeInsets.symmetric(horizontal: 4.0), 
+            child: ChoiceChip(
+              label: Text(categories[index].name), 
+              selected: isSelected,
               onSelected: (bool selected) { if (selected) { onCategorySelected(index); } },
-              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha(100), selectedColor: Theme.of(context).colorScheme.primaryContainer,
-              labelStyle: TextStyle( color: isSelected ? Theme.of(context).colorScheme.onPrimaryContainer : Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, fontSize: 13),
-              // ✨ فیکس: withOpacity -> withAlpha
-              shape: RoundedRectangleBorder( borderRadius: BorderRadius.circular(20), side: BorderSide( color: isSelected ? Colors.transparent : Colors.grey.withAlpha(50), ), ),
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap, labelPadding: const EdgeInsets.symmetric(horizontal: 14.0), padding: EdgeInsets.zero, showCheckmark: false, visualDensity: VisualDensity.compact,
-            ), ); }, ), ); }
+              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha(100), 
+              selectedColor: Theme.of(context).colorScheme.primaryContainer,
+              labelStyle: TextStyle( 
+                color: isSelected ? Theme.of(context).colorScheme.onPrimaryContainer : Theme.of(context).colorScheme.onSurfaceVariant, 
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, 
+                fontSize: 13
+              ),
+              shape: RoundedRectangleBorder( 
+                borderRadius: BorderRadius.circular(20), 
+                side: BorderSide( color: isSelected ? Colors.transparent : Colors.grey.withAlpha(50), ), 
+              ),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap, 
+              labelPadding: const EdgeInsets.symmetric(horizontal: 14.0), 
+              padding: EdgeInsets.zero, 
+              showCheckmark: false, 
+              visualDensity: VisualDensity.compact,
+            ), 
+          ); 
+        }, 
+      ), 
+    ); 
+  }
 
   @override double get maxExtent => 60.0;
   @override double get minExtent => 60.0;
 
   @override
   bool shouldRebuild(covariant _CategoryHeaderDelegate oldDelegate) {
-    return selectedIndex != oldDelegate.selectedIndex || categories != oldDelegate.categories;
+    return selectedIndex != oldDelegate.selectedIndex || 
+           categories != oldDelegate.categories;
+           // از listEquals برای مقایسه عمیق لیست‌ها استفاده کنید اگر محتوای آنها تغییر می‌کند
+           // listEquals(categories, oldDelegate.categories);
   }
 }

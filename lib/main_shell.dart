@@ -20,7 +20,6 @@ import 'features/order/presentation/pages/order_history_page.dart';
 // --- ۱. AuthCubit ایمپورت شود ---
 import 'features/auth/presentation/cubit/auth_cubit.dart';
 
-
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
@@ -39,7 +38,7 @@ class _MainShellState extends State<MainShell> {
   ];
 
   void _onItemTapped(int index) {
-    if (index == 2) { 
+    if (index == 2) {
       try {
         context.read<OrderHistoryCubit>().fetchOrderHistory();
       } catch (e) {
@@ -58,9 +57,12 @@ class _MainShellState extends State<MainShell> {
         BlocProvider(
           create: (context) => sl<DashboardCubit>()..fetchDashboardData(),
         ),
+        // --- اصلاح شد: فراخوانی تابع از اینجا حذف شد ---
+        // حالا این تابع فقط یک بار در AuthGate فراخوانی می‌شود
         BlocProvider.value(
-          value: sl<CustomerCubit>()..fetchCustomerDetails(),
+          value: sl<CustomerCubit>(), // <-- .fetchCustomerDetails() حذف شد
         ),
+        // ---
         BlocProvider(
           create: (context) => sl<StoreCubit>(),
         ),
@@ -85,7 +87,7 @@ class _MainShellState extends State<MainShell> {
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.shopping_cart_outlined),
-              label: 'سبد خرید', 
+              label: 'سبد خرید',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.receipt_long_outlined),
@@ -98,7 +100,7 @@ class _MainShellState extends State<MainShell> {
           ],
           currentIndex: _selectedIndex,
           selectedItemColor: Theme.of(context).colorScheme.primary,
-          unselectedItemColor: Colors.grey[700], 
+          unselectedItemColor: Colors.grey[700],
           onTap: _onItemTapped,
         ),
       ),

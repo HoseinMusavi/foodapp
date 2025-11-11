@@ -2,12 +2,13 @@
 
 import 'package:customer_app/features/checkout/data/models/order_item_option_model.dart';
 import 'package:customer_app/features/checkout/domain/entities/order_item_entity.dart';
+import 'package:customer_app/features/product/data/models/product_model.dart';
 
 class OrderItemModel extends OrderItemEntity {
   const OrderItemModel({
     required super.id,
-    required super.orderId,
-    required super.productId,
+    super.productId, // <-- حالا اختیاری است
+    super.product, // <-- حالا اختیاری است
     required super.quantity,
     required super.priceAtPurchase,
     required super.productName,
@@ -15,36 +16,32 @@ class OrderItemModel extends OrderItemEntity {
   });
 
   factory OrderItemModel.fromJson(Map<String, dynamic> json) {
-    
-    // ****** 1. این بخش اضافه شد (برای خواندن آپشن‌ها) ******
-    List<OrderItemOptionModel> optionsList = [];
-    if (json['order_item_options'] != null) {
-      optionsList = (json['order_item_options'] as List)
-          .map((optionJson) => OrderItemOptionModel.fromJson(optionJson))
-          .toList();
+    // --- منطق هوشمند جدید (رفع خطای Map/int) ---
+    final productData = json['product_id'];
+    int? parsedProductId;
+    if (productData is int) {
+      parsedProductId = productData;
+    } else if (productData is Map) {
+      parsedProductId = (productData['id'] as num).toInt();
+    } else {
+      parsedProductId = null; // اگر محصول حذف شده باشد
     }
-    // ****** پایان بخش اضافه شده ******
+    // --- پایان منطق هوشمند ---
 
     return OrderItemModel(
-      id: json['id'],
-      orderId: json['order_id'],
-      productId: json['product_id'],
-      quantity: json['quantity'],
+      id: (json['id'] as num).toInt(),
+      // --- اصلاح شد ---
+      productId: parsedProductId,
+      product: (json['product_id'] is Map)
+          ? ProductModel.fromJson(json['product_id'] as Map<String, dynamic>)
+          : null,
+      // ---
+      quantity: (json['quantity'] as num).toInt(),
       priceAtPurchase: (json['price_at_purchase'] as num).toDouble(),
-      productName: json['product_name'],
-      options: optionsList, // <-- ** 2. آپشن‌ها اینجا پاس داده شد **
+      productName: json['product_name'] as String,
+      options: (json['order_item_options'] as List)
+          .map((option) => OrderItemOptionModel.fromJson(option as Map<String, dynamic>))
+          .toList(),
     );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'order_id': orderId,
-      'product_id': productId,
-      'quantity': quantity,
-      'price_at_purchase': priceAtPurchase,
-      'product_name': productName,
-      // 'options': options.map((o) => (o as OrderItemOptionModel).toJson()).toList(), // فعلا نیازی نیست
-    };
   }
 }

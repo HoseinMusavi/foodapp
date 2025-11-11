@@ -1,26 +1,41 @@
 // lib/features/checkout/domain/entities/order_item_entity.dart
+
+import 'package:customer_app/features/checkout/domain/entities/order_item_option_entity.dart';
+
+import 'package:customer_app/features/product/domain/entities/product_entity.dart';
 import 'package:equatable/equatable.dart';
-import 'order_item_option_entity.dart'; // <-- ایمپورت فایل بالا
 
 class OrderItemEntity extends Equatable {
   final int id;
-  final int orderId;
-  final int productId;
+  // --- اصلاح شد: این دو فیلد می‌توانند null باشند ---
+  final int? productId; 
+  final ProductEntity? product;
+  // ---
   final int quantity;
-  final double priceAtPurchase; // قیمت نهایی محصول + آپشن‌ها در لحظه خرید
+  final double priceAtPurchase;
   final String productName;
-  final List<OrderItemOptionEntity> options; // لیست آپشن‌های انتخاب شده
+  final List<OrderItemOptionEntity> options;
 
   const OrderItemEntity({
     required this.id,
-    required this.orderId,
-    required this.productId,
+    // --- اصلاح شد: required حذف شد ---
+    this.productId,
+    this.product,
+    // ---
     required this.quantity,
     required this.priceAtPurchase,
     required this.productName,
-    this.options = const [],
+    required this.options,
   });
 
   @override
-  List<Object?> get props => [id, orderId, productId, quantity, options];
+  List<Object?> get props => [
+        id,
+        productId, // <--
+        product, // <--
+        quantity,
+        priceAtPurchase,
+        productName,
+        options,
+      ];
 }
