@@ -1,162 +1,58 @@
-import 'dart:io';
-import 'package:customer_app/core/widgets/custom_network_image.dart';
+// lib/features/customer/presentation/pages/customer_profile_page.dart
+
+import 'package:customer_app/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:customer_app/features/customer/domain/entities/customer_entity.dart';
+import 'package:customer_app/features/customer/presentation/cubit/customer_cubit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:customer_app/features/customer/presentation/cubit/customer_cubit.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:developer' as dev; // برای لاگ‌گذاری
 
-class CustomerProfilePage extends StatelessWidget {
+class CustomerProfilePage extends StatefulWidget {
   const CustomerProfilePage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: BlocConsumer<CustomerCubit, CustomerState>(
-        listener: (context, state) {
-          if (state is CustomerError && state.message != 'Profile not found') {
-            ScaffoldMessenger.of(context)
-              ..hideCurrentSnackBar()
-              ..showSnackBar(
-                SnackBar(
-                  content: Text('خطا: ${state.message}'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-          }
-        },
-        builder: (context, state) {
-          if (state is CustomerLoading || state is CustomerInitial) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (state is CustomerLoaded) {
-            return ProfileView(customer: state.customer);
-          }
-          // If state is CustomerError with 'Profile not found', show the create form.
-          final currentUser = Supabase.instance.client.auth.currentUser;
-          return CreateOrEditProfileForm(
-            isEditing: false,
-            // Create a dummy entity for the form
-            customer: CustomerEntity(
-              id: currentUser?.id ?? '',
-              email: currentUser?.email ?? '',
-              fullName: '',
-              phone: '',
-            ),
-          );
-        },
-      ),
-    );
-  }
+  State<CustomerProfilePage> createState() => _CustomerProfilePageState();
 }
 
-class ProfileView extends StatelessWidget {
-  final CustomerEntity customer;
-  const ProfileView({required this.customer, super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        SliverAppBar(
-          pinned: true,
-          expandedHeight: 250.0,
-          backgroundColor: Theme.of(context).primaryColor,
-          flexibleSpace: FlexibleSpaceBar(
-            title: Text(customer.fullName, style: const TextStyle(color: Colors.white)),
-            background: customer.avatarUrl != null && customer.avatarUrl!.isNotEmpty
-                ? CustomNetworkImage(imageUrl: customer.avatarUrl!, fit: BoxFit.cover)
-                : Container(color: Theme.of(context).primaryColor.withOpacity(0.5)),
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.logout, color: Colors.white),
-              onPressed: () => Supabase.instance.client.auth.signOut(),
-            ),
-          ],
-        ),
-        SliverList(
-          delegate: SliverChildListDelegate([
-            ListTile(
-              leading: const Icon(Icons.email_outlined),
-              title: Text(customer.email),
-            ),
-            ListTile(
-              leading: const Icon(Icons.phone_outlined),
-              title: Text(customer.phone),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.location_on_outlined),
-              title: const Text('آدرس‌های من'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                /* Navigate to address page */
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.history),
-              title: const Text('تاریخچه سفارشات'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                /* Navigate to order history */
-              },
-            ),
-            const Divider(),
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.edit),
-                label: const Text('ویرایش پروفایل'),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      // We provide the Cubit to the edit page
-                      builder: (_) => BlocProvider.value(
-                        value: context.read<CustomerCubit>(),
-                        child: CreateOrEditProfileForm(
-                          isEditing: true,
-                          customer: customer,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ]),
-        ),
-      ],
-    );
-  }
-}
-
-class CreateOrEditProfileForm extends StatefulWidget {
-  final bool isEditing;
-  final CustomerEntity customer;
-  const CreateOrEditProfileForm({
-    required this.isEditing,
-    required this.customer,
-    super.key,
-  });
-
-  @override
-  State<CreateOrEditProfileForm> createState() =>
-      _CreateOrEditProfileFormState();
-}
-
-class _CreateOrEditProfileFormState extends State<CreateOrEditProfileForm> {
+class _CustomerProfilePageState extends State<CustomerProfilePage>
+    with AutomaticKeepAliveClientMixin {
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _fullNameController;
-  late final TextEditingController _phoneController;
-  File? _imageFile;
+  late TextEditingController _fullNameController;
+  late TextEditingController _phoneController;
+
+  CustomerEntity? _currentCustomer;
+  bool _isEditing = false;
+  // --- ۱. اضافه شدن فلگ برای تشخیص کاربر جدید ---
+  bool _isNewUser = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
-    _fullNameController = TextEditingController(text: widget.customer.fullName);
-    _phoneController = TextEditingController(text: widget.customer.phone);
+    dev.log('[LOG-UI] 1. initState()', name: 'CustomerProfilePage');
+    _fullNameController = TextEditingController();
+    _phoneController = TextEditingController();
+
+    final state = context.read<CustomerCubit>().state;
+    dev.log('[LOG-UI] 2. Initial Cubit State in initState: ${state.runtimeType}', name: 'CustomerProfilePage');
+    
+    if (state is CustomerLoaded) {
+      dev.log('[LOG-UI] 3. initState: Cubit is already CustomerLoaded.', name: 'CustomerProfilePage');
+      _currentCustomer = state.customer;
+      _updateControllers(state.customer);
+      
+      // --- ۲. بررسی در initState (منطق کاربر جدید) ---
+      if (state.customer.fullName.isEmpty || state.customer.phone.isEmpty) {
+        dev.log('[LOG-UI] 4. initState: Detected new user. Forcing edit mode.', name: 'CustomerProfilePage');
+        _isEditing = true;
+        _isNewUser = true; // این یک کاربر جدید است
+      }
+    } else if (state is CustomerInitial) {
+      dev.log('[LOG-UI] 3. initState: Cubit is CustomerInitial. Calling fetchCustomerDetails().', name: 'CustomerProfilePage');
+      context.read<CustomerCubit>().fetchCustomerDetails();
+    }
   }
 
   @override
@@ -166,111 +62,387 @@ class _CreateOrEditProfileFormState extends State<CreateOrEditProfileForm> {
     super.dispose();
   }
 
-  Future<void> _pickImage() async {
-    final pickedFile = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 50, // Compress image
-    );
-    if (pickedFile != null) {
-      setState(() {
-        _imageFile = File(pickedFile.path);
-      });
-    }
+  void _updateControllers(CustomerEntity customer) {
+    dev.log('[LOG-UI] _updateControllers() called with name: "${customer.fullName}"', name: 'CustomerProfilePage');
+    _fullNameController.text = customer.fullName;
+    _phoneController.text = customer.phone;
   }
 
-  void _submitForm() {
-    if (_formKey.currentState!.validate()) {
-      context
-          .read<CustomerCubit>()
-          .saveProfile(
-            fullName: _fullNameController.text.trim(),
-            phone: _phoneController.text.trim(),
-            imageFile: _imageFile,
-          )
-          .then((_) {
-            // After saving, if we are in edit mode, pop the screen
-            if (widget.isEditing && Navigator.canPop(context)) {
-              Navigator.pop(context);
-            }
-          });
+  void _toggleEdit() {
+    // --- ۳. منطق دکمه انصراف (منطق کاربر جدید) ---
+    if (_isNewUser && _isEditing) {
+      dev.log('[LOG-UI] _toggleEdit(): New user tried to cancel edit. Denied.', name: 'CustomerProfilePage');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لطفا ابتدا پروفایل خود را تکمیل کنید.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return; // از خروج از حالت ویرایش جلوگیری کن
+    }
+    setState(() => _isEditing = !_isEditing);
+  }
+
+  void _saveProfile() {
+    if (_formKey.currentState!.validate() && _currentCustomer != null) {
+      dev.log('[LOG-UI] _saveProfile() called.', name: 'CustomerProfilePage');
+      final updatedCustomer = CustomerEntity(
+        id: _currentCustomer!.id,
+        email: _currentCustomer!.email,
+        fullName: _fullNameController.text,
+        phone: _phoneController.text,
+        avatarUrl: _currentCustomer!.avatarUrl,
+        defaultAddressId: _currentCustomer!.defaultAddressId,
+      );
+      context.read<CustomerCubit>().updateCustomer(updatedCustomer);
+      
+      // --- ۴. پس از ذخیره (منطق کاربر جدید) ---
+      setState(() {
+        _isEditing = false;
+        _isNewUser = false; // کاربر اطلاعات خود را ذخیره کرد
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+    dev.log('[LOG-UI] build() called.', name: 'CustomerProfilePage');
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.isEditing ? 'ویرایش پروفایل' : 'تکمیل پروفایل'),
-      ),
-      body: BlocListener<CustomerCubit, CustomerState>(
-        // This listener will pop the page on successful update
+      body: BlocConsumer<CustomerCubit, CustomerState>(
         listener: (context, state) {
-          if (state is CustomerLoaded && widget.isEditing) {
-             // Navigator.of(context).pop();
+          dev.log('[LOG-UI] BlocListener detected state: ${state.runtimeType}', name: 'CustomerProfilePage');
+          if (state is CustomerLoaded) {
+            _currentCustomer = state.customer;
+            _updateControllers(state.customer);
+
+            // --- ۵. بررسی در listener (منطق کاربر جدید) ---
+            if (state.customer.fullName.isEmpty || state.customer.phone.isEmpty) {
+              if (!_isEditing) { // فقط اگر قبلاً در حالت ویرایش نبودیم
+                dev.log('[LOG-UI] Listener: Detected new user. Forcing edit mode.', name: 'CustomerProfilePage');
+                setState(() {
+                  _isEditing = true;
+                  _isNewUser = true;
+                });
+              }
+            } else if (_isNewUser && state.customer.fullName.isNotEmpty) {
+              // اگر کاربر اطلاعاتش را ذخیره کرده و ما new user بودیم
+              dev.log('[LOG-UI] Listener: User was new, but data is now present. Disabling new user mode.', name: 'CustomerProfilePage');
+              setState(() {
+                 _isNewUser = false;
+                 _isEditing = false;
+              });
+            }
+          }
+          if (state is CustomerError) {
+            dev.log('[LOG-UI] Listener: Detected CustomerError: ${state.message}', name: 'CustomerProfilePage');
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(state.message),
+                backgroundColor: Colors.red,
+              ),
+            );
           }
         },
-        child: SingleChildScrollView(
+        builder: (context, state) {
+          dev.log('[LOG-UI] BlocBuilder building with state: ${state.runtimeType}', name: 'CustomerProfilePage');
+          
+          final customer = (state is CustomerLoaded) 
+              ? state.customer 
+              : _currentCustomer;
+
+          // --- ۶. مدیریت حالت‌های لودینگ و خطا ---
+          if (state is CustomerLoading && customer == null) {
+             dev.log('[LOG-UI] Builder: Showing full page loading (Loading, no customer data).', name: 'CustomerProfilePage');
+             return const Center(child: CircularProgressIndicator());
+          }
+
+          if (state is CustomerError && customer == null) {
+             dev.log('[LOG-UI] Builder: Showing Error widget (Error, no customer data).', name: 'CustomerProfilePage');
+             return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('خطا در بارگیری اطلاعات: ${state.message}'),
+                  ElevatedButton(
+                    onPressed: () {
+                       dev.log('[LOG-UI] "Retry" button pressed.', name: 'CustomerProfilePage');
+                       context.read<CustomerCubit>().fetchCustomerDetails();
+                    },
+                    child: const Text('تلاش مجدد'),
+                  )
+                ],
+              ),
+            );
+          }
+          
+          if (customer == null) {
+             dev.log('[LOG-UI] Builder: Showing full page loading (Customer is null, state is ${state.runtimeType}).', name: 'CustomerProfilePage');
+             return const Center(child: CircularProgressIndicator());
+          }
+          // --- پایان مدیریت حالت‌ها ---
+
+
+          dev.log('[LOG-UI] Builder: Showing profile page. IsEditing: $_isEditing, IsNewUser: $_isNewUser', name: 'CustomerProfilePage');
+          return RefreshIndicator(
+            onRefresh: () async {
+              dev.log('[LOG-UI] RefreshIndicator pulled.', name: 'CustomerProfilePage');
+              context.read<CustomerCubit>().fetchCustomerDetails();
+            },
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
+                children: [
+                  _buildHeader(context, customer),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 400),
+                    transitionBuilder: (child, animation) =>
+                        FadeTransition(opacity: animation, child: child),
+                    child: _isEditing
+                        ? _buildEditableForm(context, customer)
+                        : _buildReadOnlyProfile(context, customer),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildLogoutButton(context),
+                  const SizedBox(height: 32),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, CustomerEntity customer) {
+    final theme = Theme.of(context);
+    final avatarUrl = customer.avatarUrl;
+    final fallbackLetter = customer.fullName.isNotEmpty
+        ? customer.fullName[0].toUpperCase()
+        : customer.email.isNotEmpty
+          ? customer.email[0].toUpperCase()
+          : '؟';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.only(top: 60, bottom: 30),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            theme.colorScheme.primary,
+            theme.colorScheme.primary.withOpacity(0.8),
+          ],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        borderRadius: const BorderRadius.vertical(
+          bottom: Radius.circular(40),
+        ),
+      ),
+      child: Column(
+        children: [
+          CircleAvatar(
+            radius: 48,
+            backgroundImage:
+                (avatarUrl != null && avatarUrl.isNotEmpty) ? NetworkImage(avatarUrl) : null,
+            backgroundColor: theme.colorScheme.onPrimary.withOpacity(0.1),
+            child: (avatarUrl == null || avatarUrl.isEmpty)
+                ? Text(
+                    fallbackLetter,
+                    style: TextStyle(
+                      fontSize: 40,
+                      color: theme.colorScheme.onPrimary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            customer.fullName.isNotEmpty ? customer.fullName : customer.email,
+            style: theme.textTheme.headlineSmall
+                ?.copyWith(color: theme.colorScheme.onPrimary),
+          ),
+          const SizedBox(height: 4),
+          if (customer.fullName.isNotEmpty)
+            Text(
+              customer.email,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onPrimary.withOpacity(0.8)),
+            ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            // --- ۷. منطق دکمه (منطق کاربر جدید) ---
+            icon: Icon(_isEditing ? (_isNewUser ? Icons.edit_note : Icons.close) : Icons.edit),
+            label: Text(_isEditing ? (_isNewUser ? "تکمیل پروفایل" : "انصراف") : "ویرایش پروفایل"),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.colorScheme.onPrimary,
+              foregroundColor: theme.colorScheme.primary,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+            onPressed: _toggleEdit,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReadOnlyProfile(BuildContext context, CustomerEntity customer) {
+    return Padding(
+      key: const ValueKey('readOnly'), // Key برای AnimatedSwitcher
+      padding: const EdgeInsets.all(16.0),
+      child: Card(
+        elevation: 3,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
           padding: const EdgeInsets.all(16.0),
-          child: Form(
-            key: _formKey,
+          child: Column(
+            children: [
+              _infoRow(Icons.person_outline, "نام و نام خانوادگی", customer.fullName),
+              const Divider(),
+              _infoRow(Icons.phone_outlined, "شماره تلفن", customer.phone),
+              const Divider(),
+              _infoRow(Icons.email_outlined, "ایمیل", customer.email),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEditableForm(BuildContext context, CustomerEntity customer) {
+    final theme = Theme.of(context);
+    return Padding(
+      key: const ValueKey('editable'), // Key برای AnimatedSwitcher
+      padding: const EdgeInsets.all(16.0),
+      child: Form(
+        key: _formKey,
+        child: Card(
+          elevation: 3,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
             child: Column(
               children: [
-                Stack(
-                  alignment: Alignment.bottomRight,
-                  children: [
-                    CircleAvatar(
-                      radius: 60,
-                      backgroundImage: _imageFile != null
-                          ? FileImage(_imageFile!)
-                          : (widget.customer.avatarUrl != null &&
-                                  widget.customer.avatarUrl!.isNotEmpty
-                              ? NetworkImage(widget.customer.avatarUrl!)
-                              : null) as ImageProvider?,
-                      child: _imageFile == null &&
-                              (widget.customer.avatarUrl == null ||
-                                  widget.customer.avatarUrl!.isEmpty)
-                          ? const Icon(Icons.person_outline, size: 60)
-                          : null,
+                // --- ۸. پیام خوش‌آمدگویی (منطق کاربر جدید) ---
+                if (_isNewUser)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16.0),
+                    child: Text(
+                      'خوش آمدید! لطفا اطلاعات پروفایل خود را تکمیل کنید.',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                      textAlign: TextAlign.center,
                     ),
-                    IconButton.filled(
-                      icon: const Icon(Icons.camera_alt),
-                      onPressed: _pickImage,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 32),
+                  ),
                 TextFormField(
                   controller: _fullNameController,
                   decoration: const InputDecoration(
-                    labelText: 'نام و نام خانوادگی',
+                    labelText: "نام و نام خانوادگی",
+                    prefixIcon: Icon(Icons.person_outline),
                   ),
-                  validator: (value) =>
-                      value!.isEmpty ? 'لطفا نام خود را وارد کنید' : null,
+                  validator: (v) => v == null || v.isEmpty ? 'نام الزامی است' : null,
+                  textInputAction: TextInputAction.next,
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _phoneController,
-                  decoration: const InputDecoration(labelText: 'شماره تلفن'),
+                  decoration: const InputDecoration(
+                    labelText: "شماره تلفن",
+                    prefixIcon: Icon(Icons.phone_outlined),
+                  ),
+                  validator: (v) => v == null || v.isEmpty ? 'شماره الزامی است' : null,
                   keyboardType: TextInputType.phone,
-                  validator: (value) =>
-                      value!.isEmpty ? 'لطفا شماره تلفن را وارد کنید' : null,
+                  textInputAction: TextInputAction.done,
                 ),
-                const SizedBox(height: 32),
-                BlocBuilder<CustomerCubit, CustomerState>(
-                  builder: (context, state) {
-                    if (state is CustomerUpdating) {
-                      return const CircularProgressIndicator();
-                    }
-                    return ElevatedButton(
-                      onPressed: _submitForm,
-                      child: const Text('ذخیره تغییرات'),
-                    );
-                  },
+                const SizedBox(height: 16),
+                TextFormField(
+                  initialValue: customer.email,
+                  enabled: false,
+                  decoration: const InputDecoration(
+                    labelText: "ایمیل (غیرقابل ویرایش)",
+                    prefixIcon: Icon(Icons.email_outlined),
+                    suffixIcon: Icon(Icons.lock_outline, size: 18),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.save),
+                    label: const Text("ذخیره تغییرات"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: theme.colorScheme.primary,
+                      foregroundColor: theme.colorScheme.onPrimary,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: _saveProfile,
+                  ),
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String label, String value) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(label),
+      subtitle: Text(
+        value.isEmpty ? 'ثبت نشده' : value, // اگر خالی بود، "ثبت نشده" نشان بده
+        style: TextStyle(
+          color: value.isEmpty ? Colors.grey[600] : null,
+          fontStyle: value.isEmpty ? FontStyle.italic : FontStyle.normal,
+        ),
+      ),
+      dense: true,
+    );
+  }
+
+  Widget _buildLogoutButton(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32.0),
+      child: TextButton.icon(
+        icon: const Icon(Icons.logout),
+        label: const Text("خروج از حساب کاربری"),
+        style: TextButton.styleFrom(
+          foregroundColor: Theme.of(context).colorScheme.error,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+        onPressed: () {
+          showDialog(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('خروج از حساب'),
+              content: const Text('آیا برای خروج مطمئن هستید؟'),
+              actions: [
+                TextButton(
+                  child: const Text('لغو'),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                ),
+                FilledButton(
+                  child: const Text('خروج'),
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                    context.read<AuthCubit>().signOut();
+                  },
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

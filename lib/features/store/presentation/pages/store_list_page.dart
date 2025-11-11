@@ -1,5 +1,6 @@
 // lib/features/store/presentation/pages/store_list_page.dart
 
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -8,19 +9,17 @@ import 'package:shimmer/shimmer.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 
 import 'package:customer_app/features/promotion/domain/entities/promotion_entity.dart';
-import 'package:customer_app/features/store/presentation/cubit/dashboard_cubit.dart'; // از DashboardCubit استفاده می‌کنیم
-// دیگر نیازی به service_locator اینجا نیست
+import 'package:customer_app/features/store/presentation/cubit/dashboard_cubit.dart';
 import '../../domain/entities/store_entity.dart';
 import '../../../product/presentation/pages/product_list_page.dart';
 
-// مدل دسته‌بندی
-class Category {
+// --- ۱. بازطراحی مدل دسته‌بندی با آیکون ---
+class _CategoryItem {
   final String name;
-  final String imageUrl;
-  Category({required this.name, required this.imageUrl});
+  final IconData icon; // به جای imageUrl از IconData استفاده می‌کنیم
+  _CategoryItem({required this.name, required this.icon});
 }
 
-// ۱. باید StatefulWidget باشد
 class StoreListPage extends StatefulWidget {
   const StoreListPage({super.key});
 
@@ -28,82 +27,215 @@ class StoreListPage extends StatefulWidget {
   State<StoreListPage> createState() => _StoreListPageState();
 }
 
-// ۲. اضافه کردن AutomaticKeepAliveClientMixin
 class _StoreListPageState extends State<StoreListPage>
-    with AutomaticKeepAliveClientMixin { // <-- اضافه شد
+    with AutomaticKeepAliveClientMixin {
   final PageController _pageController = PageController();
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
+
+  final ScrollController _scrollController = ScrollController();
+  final FocusNode _searchFocusNode = FocusNode();
+
+  // --- ۲. تعریف لیست جدید دسته‌بندی‌ها با آیکون‌های Material ---
+  final List<_CategoryItem> categoryItems = [
+    _CategoryItem(name: 'همه', icon: Icons.storefront_outlined),
+    _CategoryItem(name: 'برگر', icon: Icons.fastfood_outlined),
+    _CategoryItem(name: 'پیتزا', icon: Icons.local_pizza_outlined),
+    _CategoryItem(name: 'ایرانی', icon: Icons.rice_bowl_outlined),
+    _CategoryItem(name: 'کافه', icon: Icons.local_cafe_outlined),
+    _CategoryItem(name: 'آسیایی', icon: Icons.ramen_dining_outlined),
+    // می‌توانید دسته‌بندی‌های دیگری مثل "سایر" را هم اضافه کنید
+    // _CategoryItem(name: 'سایر', icon: Icons.tap_and_play_outlined),
+  ];
+  
+  final GlobalKey _storesTitleKey = GlobalKey();
+
 
   @override
   void initState() {
     super.initState();
-    // فراخوانی fetchDashboardData اینجا نیست (در main_shell انجام می‌شود)
+    _searchFocusNode.addListener(_onSearchFocusChange);
+  }
+
+  void _onSearchFocusChange() {
+    if (_searchFocusNode.hasFocus) {
+      Timer(const Duration(milliseconds: 300), () {
+        if (!mounted) return;
+        
+        final storesTitleContext = _storesTitleKey.currentContext;
+        if (storesTitleContext != null) {
+          Scrollable.ensureVisible(
+            storesTitleContext,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+            alignment: 0.0,
+          );
+        }
+      });
+    }
+  }
+
+
+  _onSearchChanged(String query) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      if (mounted && query != context.read<DashboardCubit>().state.searchQuery) {
+        context.read<DashboardCubit>().searchStores(query);
+      }
+    });
   }
 
   @override
   void dispose() {
     _pageController.dispose();
+    _searchController.dispose();
+    _debounce?.cancel();
+    _scrollController.dispose();
+    _searchFocusNode.removeListener(_onSearchFocusChange);
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
-  // ۳. اضافه کردن wantKeepAlive
   @override
-  bool get wantKeepAlive => true; // <-- اضافه شد
+  bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
-    // ۴. اضافه کردن super.build(context)
-    super.build(context); // <-- اضافه شد
+    super.build(context);
 
     return Scaffold(
       backgroundColor: Colors.white,
-      body: BlocBuilder<DashboardCubit, DashboardState>( // <-- Cubit صحیح
-        builder: (context, state) {
-          // --- حالت لودینگ اولیه ---
-          if (state.status == DashboardStatus.loading && state.stores.isEmpty) {
-            return _buildLoadingSkeleton();
+      body: BlocListener<DashboardCubit, DashboardState>(
+        listenWhen: (prev, current) => 
+            (prev.searchQuery != current.searchQuery) ||
+            (prev.storeStatus != current.storeStatus && current.storeStatus == DataStatus.failure),
+        listener: (context, state) {
+          if (state.searchQuery.isEmpty && _searchController.text.isNotEmpty) {
+            _searchController.clear();
           }
-
-          // --- حالت خطا ---
-          if (state.status == DashboardStatus.failure) {
-            return _buildErrorWidget(
-              message: state.errorMessage ?? 'خطا در برقراری ارتباط با سرور',
-              onRetry: () =>
-                  context.read<DashboardCubit>().fetchDashboardData(),
+          if (state.storeStatus == DataStatus.failure) {
+             ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(state.errorMessage ?? 'خطا در واکشی فروشگاه‌ها'),
+                backgroundColor: Colors.red,
+              ),
             );
           }
-
-          // --- حالت موفقیت یا لودینگ (برای رفرش) ---
-          return RefreshIndicator(
-            onRefresh: () async =>
-                context.read<DashboardCubit>().fetchDashboardData(),
-            child: CustomScrollView(
-              slivers: [
-                _buildSliverAppBar(context),
-                _buildSectionTitle('دسته‌بندی‌ها'),
-                _buildCategoriesSliver(),
-                if (state.promotions.isNotEmpty) ...[
-                  _buildSectionTitle('پیشنهادهای ویژه'),
-                  _buildPromotionsSliver(context, state.promotions),
-                ],
-                _buildSectionTitle('همه فروشگاه‌ها'),
-                if (state.stores.isEmpty && state.status != DashboardStatus.loading)
-                  _buildEmptyState('فروشگاهی یافت نشد!')
-                else
-                  _buildStoresGrid(context, state.stores),
-              ],
-            ),
-          );
         },
+        child: BlocBuilder<DashboardCubit, DashboardState>(
+          buildWhen: (prev, current) => prev.promotionStatus != current.promotionStatus,
+          builder: (context, state) {
+            
+            if (state.promotionStatus == DataStatus.loading || state.promotionStatus == DataStatus.initial) {
+              return _buildFullPageLoadingSkeleton();
+            }
+
+            if (state.promotionStatus == DataStatus.failure) {
+              return _buildErrorWidget(
+                message: state.errorMessage ?? 'خطا در برقراری ارتباط با سرور',
+                onRetry: () =>
+                    context.read<DashboardCubit>().fetchDashboardData(),
+              );
+            }
+
+            return GestureDetector(
+              onTap: () {
+                if (_searchFocusNode.hasFocus) {
+                  _searchFocusNode.unfocus();
+                }
+              },
+              child: RefreshIndicator(
+                onRefresh: () async {
+                  await context.read<DashboardCubit>().refreshStores();
+                },
+                child: CustomScrollView(
+                  controller: _scrollController,
+                  slivers: [
+                    _buildSliverAppBar(context),
+                    
+                    SliverToBoxAdapter(
+                      child: _buildCategoriesSliver(context),
+                    ),
+                    
+                    BlocBuilder<DashboardCubit, DashboardState>(
+                      // --- (۱) اصلاحیه: حالا به لیست فروشگاه‌ها هم حساس است ---
+                      // تا بتوانیم storeId را در لیست جستجو کنیم
+                      buildWhen: (p, c) => p.promotions != c.promotions || p.stores != c.stores,
+                      builder: (context, state) {
+                        if (state.promotions.isEmpty) {
+                          return const SliverToBoxAdapter(child: SizedBox.shrink());
+                        }
+                        return SliverList(
+                          delegate: SliverChildListDelegate([
+                            _buildSectionTitle('پیشنهادهای ویژه'),
+                            // --- (۲) اصلاحیه: ارسال کل state ---
+                            _buildPromotionsSliver(context, state),
+                          ]),
+                        );
+                      },
+                    ),
+                    
+                    BlocBuilder<DashboardCubit, DashboardState>(
+                      buildWhen: (prev, current) =>
+                          prev.storeStatus != current.storeStatus ||
+                          prev.selectedCategory != current.selectedCategory,
+                      builder: (context, state) {
+                        if (state.storeStatus == DataStatus.loading) {
+                          return SliverList(
+                             delegate: SliverChildListDelegate([
+                               _buildSectionTitle(
+                                 state.selectedCategory.isEmpty
+                                    ? 'همه فروشگاه‌ها'
+                                     : 'فروشگاه‌های ${state.selectedCategory}',
+                                 key: _storesTitleKey,
+                               ),
+                               _buildStoresLoadingSkeletonBox(),
+                             ]),
+                          );
+                        }
+                        
+                        if (state.stores.isEmpty) {
+                           return SliverList(
+                             delegate: SliverChildListDelegate([
+                               _buildSectionTitle(
+                                 state.selectedCategory.isEmpty
+                                    ? 'همه فروشگاه‌ها'
+                                    : 'فروشگاه‌های ${state.selectedCategory}',
+                                 key: _storesTitleKey,
+                               ),
+                               _buildEmptyState('فروشگاهی با این مشخصات یافت نشد!'),
+                             ]),
+                           );
+                        }
+
+                        return SliverList(
+                          delegate: SliverChildListDelegate([
+                             _buildSectionTitle(
+                               state.selectedCategory.isEmpty
+                                  ? 'همه فروشگاه‌ها'
+                                  : 'فروشگاه‌های ${state.selectedCategory}',
+                               key: _storesTitleKey,
+                             ),
+                            _buildStoresGrid(context, state.stores),
+                          ]),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
 
-  // --- AppBar ---
   SliverAppBar _buildSliverAppBar(BuildContext context) {
     return SliverAppBar(
       floating: true,
       snap: true,
-      pinned: false,
+      pinned: true,
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.white,
       elevation: 0.5,
@@ -123,14 +255,38 @@ class _StoreListPageState extends State<StoreListPage>
               color: Colors.grey[100],
               borderRadius: BorderRadius.circular(30.0),
             ),
-            child: const TextField(
-              // TODO: Implement search functionality
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              textInputAction: TextInputAction.search,
+              onChanged: _onSearchChanged,
+              onSubmitted: (query) {
+                _debounce?.cancel();
+                if (mounted && query != context.read<DashboardCubit>().state.searchQuery) {
+                  context.read<DashboardCubit>().searchStores(query);
+                }
+              },
               decoration: InputDecoration(
                 hintText: 'جستجو در میان رستوران‌ها...',
-                hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
-                prefixIcon: Icon(Icons.search, color: Colors.grey),
+                hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
+                prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _searchController,
+                  builder: (context, value, _) {
+                    if (value.text.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+                    return IconButton(
+                      icon: const Icon(Icons.clear, color: Colors.grey),
+                      onPressed: () {
+                        _searchController.clear();
+                        _onSearchChanged('');
+                      },
+                    );
+                  }
+                ),
                 border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(vertical: 14.0),
+                contentPadding: const EdgeInsets.symmetric(vertical: 14.0),
               ),
             ),
           ),
@@ -139,94 +295,70 @@ class _StoreListPageState extends State<StoreListPage>
     );
   }
 
-  // --- Section Title ---
-  SliverToBoxAdapter _buildSectionTitle(String title) {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-        child: Text(
-          title,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
+  Widget _buildSectionTitle(String title, {Key? key}) {
+    return Padding(
+      key: key,
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+      child: Text(
+        title,
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
       ),
     );
   }
 
-  // --- Loading Skeleton ---
-  Widget _buildLoadingSkeleton() {
-    return Shimmer.fromColors(
-      baseColor: Colors.grey[200]!,
-      highlightColor: Colors.grey[100]!,
-      child: CustomScrollView(
-        physics: const NeverScrollableScrollPhysics(),
-        slivers: [
-          _buildSliverAppBar(context),
-          _buildSectionTitle('دسته‌بندی‌ها'),
-          SliverToBoxAdapter(
-            child: SizedBox(
-              height: 110.0,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                itemCount: 5,
-                itemBuilder: (context, index) => Padding(
-                  padding: const EdgeInsets.only(left: 16.0),
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 70,
-                        height: 70,
+  Widget _buildFullPageLoadingSkeleton() {
+    return CustomScrollView(
+      physics: const NeverScrollableScrollPhysics(),
+      slivers: [
+        _buildSliverAppBar(context),
+        SliverToBoxAdapter(
+          child: Shimmer.fromColors(
+            baseColor: Colors.grey[200]!,
+            highlightColor: Colors.grey[100]!,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionTitle('دسته‌بندی‌ها'),
+                
+                SizedBox(
+                  height: 70.0,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
+                    itemCount: 6,
+                    itemBuilder: (context, index) => Container(
+                        width: 100,
+                        margin: const EdgeInsets.only(right: 12.0),
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(30),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Container(width: 50, height: 10, color: Colors.white),
-                    ],
                   ),
                 ),
-              ),
-            ),
-          ),
-          _buildSectionTitle('پیشنهادهای ویژه'),
-          SliverToBoxAdapter(
-            child: Container(
-              height: 160,
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-          ),
-          _buildSectionTitle('همه فروشگاه‌ها'),
-          SliverPadding(
-            padding: const EdgeInsets.all(16.0),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 16.0,
-                mainAxisSpacing: 16.0,
-                childAspectRatio: 0.82,
-              ),
-              delegate: SliverChildBuilderDelegate(
-                (context, index) => Container(
+
+                _buildSectionTitle('پیشنهادهای ویژه'),
+                Container(
+                  height: 160,
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-                childCount: 4,
-              ),
+                _buildSectionTitle('همه فروشگاه‌ها'),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+        SliverToBoxAdapter(
+          child: _buildStoresLoadingSkeletonBox(),
+        )
+      ],
     );
   }
 
-  // --- Error Widget ---
+
   Widget _buildErrorWidget({
     required String message,
     required VoidCallback onRetry,
@@ -273,101 +405,60 @@ class _StoreListPageState extends State<StoreListPage>
     );
   }
 
-  // --- Empty State Widget ---
-  SliverFillRemaining _buildEmptyState(String message) {
-    return SliverFillRemaining(
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.storefront_outlined, size: 60, color: Colors.grey[300]),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // --- Categories Sliver ---
-  SliverToBoxAdapter _buildCategoriesSliver() {
-    // این لیست دسته‌بندی فعلاً ثابت است، می‌توانید بعداً از بک‌اند بگیرید
-    final List<Category> categories = [
-      Category(
-        name: 'برگر',
-        imageUrl: 'https://cdn-icons-png.flaticon.com/512/3075/3075977.png',
-      ),
-      Category(
-        name: 'پیتزا',
-        imageUrl: 'https://cdn-icons-png.flaticon.com/512/1404/1404945.png',
-      ),
-      Category(
-        name: 'ایرانی',
-        imageUrl: 'https://cdn-icons-png.flaticon.com/512/9029/9029938.png',
-      ),
-      Category(
-        name: 'کافه',
-        imageUrl: 'https://cdn-icons-png.flaticon.com/512/924/924514.png',
-      ),
-      Category(
-        name: 'آسیایی',
-        imageUrl: 'https://cdn-icons-png.flaticon.com/512/4060/4060226.png',
-      ),
-    ];
-
-    return SliverToBoxAdapter(
-      child: SizedBox(
-        height: 110.0,
-        child: AnimationLimiter(
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            itemCount: categories.length,
-            itemBuilder: (context, index) {
-              final category = categories[index];
-              return AnimationConfiguration.staggeredList(
-                position: index,
-                duration: const Duration(milliseconds: 375),
-                child: SlideAnimation(
-                  verticalOffset: 50.0,
-                  child: FadeInAnimation(
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 16.0),
-                      child: Column(
+  Widget _buildCategoriesSliver(BuildContext context) {
+    return SizedBox(
+      height: 70.0,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
+        itemCount: categoryItems.length,
+        itemBuilder: (context, index) {
+          final category = categoryItems[index];
+          
+          return BlocSelector<DashboardCubit, DashboardState, bool>(
+            selector: (state) =>
+                state.selectedCategory == category.name ||
+                (state.selectedCategory.isEmpty && category.name == 'همه'),
+            builder: (context, isSelected) {
+              final colorScheme = Theme.of(context).colorScheme;
+              
+              return Padding(
+                padding: const EdgeInsets.only(right: 12.0),
+                child: Material(
+                  color: isSelected ? colorScheme.primary.withAlpha(40) : Colors.grey[100],
+                  borderRadius: BorderRadius.circular(30.0),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(30.0),
+                    onTap: () {
+                      context
+                          .read<DashboardCubit>()
+                          .selectCategory(category.name);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                      decoration: BoxDecoration(
+                         borderRadius: BorderRadius.circular(30.0),
+                         border: Border.all(
+                           color: isSelected ? colorScheme.primary : Colors.transparent,
+                           width: 1.5,
+                         ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          SizedBox(
-                            width: 70,
-                            height: 70,
-                            child: Material(
-                              color: Theme.of(context).colorScheme.primary.withAlpha(20),
-                              borderRadius: BorderRadius.circular(16),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(16),
-                                onTap: () {
-                                  // TODO: Navigate to category page or filter stores
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: CachedNetworkImage(
-                                    imageUrl: category.imageUrl,
-                                    placeholder: (c, u) => const Center(
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    ),
-                                    errorWidget: (c, u, e) => Icon(
-                                      Icons.fastfood_outlined, color: Colors.grey[400],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
+                          Icon(
+                            category.icon,
+                            size: 20,
+                            color: isSelected ? colorScheme.primary : Colors.grey[700],
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(width: 8),
                           Text(
                             category.name,
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                              color: isSelected ? colorScheme.primary : Colors.grey[800],
+                            ),
                           ),
                         ],
                       ),
@@ -376,97 +467,174 @@ class _StoreListPageState extends State<StoreListPage>
                 ),
               );
             },
-          ),
-        ),
+          );
+        },
       ),
     );
   }
 
-  // --- Promotions Sliver ---
-  SliverToBoxAdapter _buildPromotionsSliver(
+  // --- (۳) اصلاحیه: متد اکنون کل state را می‌گیرد ---
+  Widget _buildPromotionsSliver(
     BuildContext context,
-    List<PromotionEntity> promotions,
+    DashboardState state, // به جای List<PromotionEntity>
   ) {
-    if (promotions.isEmpty) {
-      return const SliverToBoxAdapter(child: SizedBox.shrink());
-    }
-
-    return SliverToBoxAdapter(
-      child: Column(
-        children: [
-          SizedBox(
-            height: 160.0,
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: promotions.length,
-              itemBuilder: (context, index) {
-                final promotion = promotions[index];
-                return Container(
+    final promotions = state.promotions; // لیست بنرها
+    final allStores = state.stores; // لیست *همه* فروشگاه‌ها
+    
+    return Column(
+      children: [
+        SizedBox(
+          height: 160.0,
+          child: PageView.builder(
+            controller: _pageController,
+            itemCount: promotions.length,
+            itemBuilder: (context, index) {
+              final promotion = promotions[index];
+              return GestureDetector(
+                onTap: () {
+                  // --- (۴) اصلاحیه: منطق کامل ناوبری ---
+                  if (promotion.storeId != null) {
+                    try {
+                      // جستجو در لیست فروشگاه‌های موجود در state
+                      final targetStore = allStores.firstWhere(
+                        (store) => store.id == promotion.storeId,
+                      );
+                      
+                      // ناوبری به صفحه فروشگاه
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ProductListPage(
+                            store: targetStore,
+                          ),
+                        ),
+                      );
+                    } catch (e) {
+                      // اگر به هر دلیلی فروشگاه پیدا نشد
+                      print('Store with id ${promotion.storeId} not found in state.');
+                      ScaffoldMessenger.of(context).showSnackBar(
+                         const SnackBar(
+                           content: Text('فروشگاه مورد نظر یافت نشد'),
+                           backgroundColor: Colors.red,
+                         ),
+                       );
+                    }
+                  } else {
+                    // اگر بنر storeId نداشت (مثلاً بنر عمومی اپلیکیشن)
+                    print('This promotion is general and has no store link.');
+                  }
+                },
+                child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 6.0),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16.0),
                     child: CachedNetworkImage(
                       imageUrl: promotion.imageUrl,
                       fit: BoxFit.cover,
-                      placeholder: (c, u) => Container(color: Colors.grey[200]),
+                      placeholder: (c, u) =>
+                          Container(color: Colors.grey[200]),
                       errorWidget: (c, u, e) => Center(
-                        child: Icon(Icons.broken_image, color: Colors.grey[400]),
+                        child: Icon(Icons.broken_image,
+                            color: Colors.grey[400]),
                       ),
                     ),
                   ),
-                );
-              },
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        SmoothPageIndicator(
+          controller: _pageController,
+          count: promotions.length,
+          effect: ExpandingDotsEffect(
+            dotHeight: 8,
+            dotWidth: 8,
+            activeDotColor: Theme.of(context).colorScheme.primary,
+            paintStyle: PaintingStyle.fill,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStoresGrid(BuildContext context, List<StoreEntity> stores) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final crossAxisCount = (screenWidth > 600) ? 3 : 2;
+
+    return AnimationLimiter(
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(), 
+        padding: const EdgeInsets.all(16.0),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          crossAxisSpacing: 16.0,
+          mainAxisSpacing: 16.0,
+          childAspectRatio: 0.82,
+        ),
+        itemCount: stores.length,
+        itemBuilder: (context, index) {
+          return AnimationConfiguration.staggeredGrid(
+            position: index,
+            duration: const Duration(milliseconds: 375),
+            columnCount: crossAxisCount,
+            child: ScaleAnimation(
+              child: FadeInAnimation(
+                child: _buildStoreCard(context, stores[index]),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+  
+  Widget _buildStoresLoadingSkeletonBox() {
+    return Shimmer.fromColors(
+       baseColor: Colors.grey[200]!,
+       highlightColor: Colors.grey[100]!,
+       child: GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16.0),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 16.0,
+            mainAxisSpacing: 16.0,
+            childAspectRatio: 0.82,
+          ),
+          itemCount: 4,
+          itemBuilder: (context, index) => Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
-          const SizedBox(height: 12),
-          SmoothPageIndicator(
-            controller: _pageController,
-            count: promotions.length,
-            effect: ExpandingDotsEffect(
-              dotHeight: 8,
-              dotWidth: 8,
-              activeDotColor: Theme.of(context).colorScheme.primary,
-              paintStyle: PaintingStyle.fill,
-            ),
+       ),
+    );
+  }
+  
+  Widget _buildEmptyState(String message) {
+    return Container(
+      height: 200,
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.storefront_outlined, size: 60, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          Text(
+            message,
+            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
           ),
         ],
       ),
     );
   }
 
-  // --- Stores Grid ---
-  Widget _buildStoresGrid(BuildContext context, List<StoreEntity> stores) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final crossAxisCount = (screenWidth > 600) ? 3 : 2;
 
-    return AnimationLimiter(
-      child: SliverPadding(
-        padding: const EdgeInsets.all(16.0),
-        sliver: SliverGrid(
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount,
-            crossAxisSpacing: 16.0,
-            mainAxisSpacing: 16.0,
-            childAspectRatio: 0.82,
-          ),
-          delegate: SliverChildBuilderDelegate((context, index) {
-            return AnimationConfiguration.staggeredGrid(
-              position: index,
-              duration: const Duration(milliseconds: 375),
-              columnCount: crossAxisCount,
-              child: ScaleAnimation(
-                child: FadeInAnimation(
-                  child: _buildStoreCard(context, stores[index]),
-                ),
-              ),
-            );
-          }, childCount: stores.length),
-        ),
-      ),
-    );
-  }
-
-  // --- Store Card (با اصلاح Flexible) ---
   Widget _buildStoreCard(BuildContext context, StoreEntity store) {
     return Card(
       elevation: 0,
@@ -480,7 +648,7 @@ class _StoreListPageState extends State<StoreListPage>
           context,
           MaterialPageRoute(
             builder: (context) => ProductListPage(
-              store: store, // <-- کل آبجکت store پاس داده می‌شود
+              store: store,
             ),
           ),
         ),
@@ -493,7 +661,8 @@ class _StoreListPageState extends State<StoreListPage>
                 imageUrl: store.logoUrl,
                 fit: BoxFit.cover,
                 width: double.infinity,
-                placeholder: (context, url) => Container(color: Colors.grey[100]),
+                placeholder: (context, url) =>
+                    Container(color: Colors.grey[100]),
                 errorWidget: (context, url, error) => Center(
                   child: Icon(Icons.store, color: Colors.grey[300], size: 40),
                 ),
@@ -507,7 +676,7 @@ class _StoreListPageState extends State<StoreListPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    Text( // نام فروشگاه
+                    Text(
                       store.name,
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
@@ -516,33 +685,37 @@ class _StoreListPageState extends State<StoreListPage>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    Text( // نوع غذا
+                    Text(
                       store.cuisineType,
                       style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    // --- شروع اصلاح Overflow ---
                     Row(
                       children: [
-                        Icon( // ستاره
+                        const Icon(
                           Icons.star,
                           size: 16,
-                          color: Colors.amber, // ساده‌تر
+                          color: Colors.amber,
                         ),
                         const SizedBox(width: 4),
-                        Flexible( // اضافه کردن Flexible
-                          child: RichText( // امتیاز
+                        Flexible(
+                          child: RichText(
                             text: TextSpan(
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Theme.of(context).textTheme.bodySmall?.color ?? Colors.black, // رنگ پیش‌فرض
-                                fontFamily: 'Vazirmatn',
+                                color: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.color ??
+                                    Colors.black,
+                                fontFamily: 'Vazir',
                               ),
                               children: [
                                 TextSpan(
                                   text: store.rating.toStringAsFixed(1),
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold),
                                 ),
                                 TextSpan(
                                   text: ' (${store.ratingCount})',
@@ -554,24 +727,24 @@ class _StoreListPageState extends State<StoreListPage>
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const Spacer(), // Spacer خودش Flexible است
-                        Flexible( // اضافه کردن Flexible
-                          child: Text( // زمان
+                        const Spacer(),
+                        Flexible(
+                          child: Text(
                             store.deliveryTimeEstimate,
-                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[600]),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const SizedBox(width: 2),
-                        Icon( // آیکون تایمر
+                        Icon(
                           Icons.timer_outlined,
                           size: 14,
                           color: Colors.grey[600],
                         ),
                       ],
                     ),
-                    // --- پایان اصلاح Overflow ---
                   ],
                 ),
               ),
@@ -581,4 +754,4 @@ class _StoreListPageState extends State<StoreListPage>
       ),
     );
   }
-} // <-- پایان کلاس _StoreListPageState
+}

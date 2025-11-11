@@ -2,37 +2,64 @@
 
 part of 'dashboard_cubit.dart';
 
-// An enum to represent the different statuses of the state
-enum DashboardStatus { initial, loading, success, failure }
+// ۱. --- تفکیک وضعیت‌ها برای بخش‌های مختلف صفحه ---
+enum DataStatus { initial, loading, success, failure }
 
 class DashboardState extends Equatable {
-  final DashboardStatus status;
-  final List<StoreEntity> stores;
+  // --- وضعیت و داده‌های تبلیغات ---
+  final DataStatus promotionStatus;
   final List<PromotionEntity> promotions;
+
+  // --- وضعیت و داده‌های فروشگاه‌ها ---
+  final DataStatus storeStatus;
+  final List<StoreEntity> stores;
+
+  // --- وضعیت فیلترها ---
+  final String selectedCategory;
+  final String searchQuery;
+
+  // --- وضعیت خطا ---
   final String? errorMessage;
 
   const DashboardState({
-    this.status = DashboardStatus.initial,
-    this.stores = const [],
+    this.promotionStatus = DataStatus.initial,
     this.promotions = const [],
+    this.storeStatus = DataStatus.initial,
+    this.stores = const [],
+    this.selectedCategory = '',
+    this.searchQuery = '',
     this.errorMessage,
   });
 
-  // A helper method to create a copy of the state with new values
   DashboardState copyWith({
-    DashboardStatus? status,
-    List<StoreEntity>? stores,
+    DataStatus? promotionStatus,
     List<PromotionEntity>? promotions,
+    DataStatus? storeStatus,
+    List<StoreEntity>? stores,
+    String? selectedCategory,
+    String? searchQuery,
     String? errorMessage,
+    bool clearError = false,
   }) {
     return DashboardState(
-      status: status ?? this.status,
-      stores: stores ?? this.stores,
+      promotionStatus: promotionStatus ?? this.promotionStatus,
       promotions: promotions ?? this.promotions,
-      errorMessage: errorMessage ?? this.errorMessage,
+      storeStatus: storeStatus ?? this.storeStatus,
+      stores: stores ?? this.stores,
+      selectedCategory: selectedCategory ?? this.selectedCategory,
+      searchQuery: searchQuery ?? this.searchQuery,
+      errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
     );
   }
 
   @override
-  List<Object?> get props => [status, stores, promotions, errorMessage];
+  List<Object?> get props => [
+        promotionStatus,
+        promotions,
+        storeStatus,
+        stores,
+        selectedCategory,
+        searchQuery,
+        errorMessage
+      ];
 }

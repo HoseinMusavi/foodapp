@@ -1,7 +1,8 @@
 // lib/features/checkout/data/models/order_model.dart
-import '../../../customer/data/models/address_model.dart';
-import '../../domain/entities/order_entity.dart';
-import 'order_item_model.dart';
+
+import 'package:customer_app/features/checkout/data/models/order_item_model.dart';
+import 'package:customer_app/features/checkout/domain/entities/order_entity.dart';
+import 'package:customer_app/features/store/data/models/store_model.dart'; // <-- ** 1. این ایمپورت اضافه شود **
 
 class OrderModel extends OrderEntity {
   const OrderModel({
@@ -17,46 +18,50 @@ class OrderModel extends OrderEntity {
     required super.status,
     super.notes,
     required super.items,
-    super.address,
+    super.store, // <-- ** 2. این فیلد اضافه شود **
   });
 
-  // تابع کمکی برای تبدیل رشته وضعیت به enum
-  static OrderStatus _parseStatus(String statusStr) {
-    try {
-      return OrderStatus.values.firstWhere((e) => e.name == statusStr);
-    } catch (e) {
-      return OrderStatus.unknown;
-    }
-  }
-
   factory OrderModel.fromJson(Map<String, dynamic> json) {
-    // پارس کردن آیتم‌های سفارش (اگر JOIN شده باشند)
-    final itemsList = (json['order_items'] as List<dynamic>?)
-            ?.map((itemJson) =>
-                OrderItemModel.fromJson(itemJson as Map<String, dynamic>))
-            .toList() ??
-        [];
+    
+    // خواندن آیتم‌ها
+    List<OrderItemModel> itemsList = [];
+    if (json['order_items'] != null && json['order_items'] is List) {
+      itemsList = (json['order_items'] as List)
+          .map((itemJson) => OrderItemModel.fromJson(itemJson))
+          .toList();
+    }
 
-    // پارس کردن آدرس (اگر JOIN شده باشد)
-    final addressData = json['addresses'];
-    final address = addressData != null
-        ? AddressModel.fromJson(addressData as Map<String, dynamic>)
-        : null;
-
+    // ****** 3. این بخش اضافه شد (برای خواندن فروشگاه) ******
+    StoreModel? storeModel;
+    if (json['store'] != null && json['store'] is Map) {
+      try {
+         storeModel = StoreModel.fromJson(json['store']);
+      } catch (e) {
+        print('Error parsing store in OrderModel: $e');
+        storeModel = null;
+      }
+    }
+    // ****** پایان بخش اضافه شده ******
+    
     return OrderModel(
-      id: json['id'] as int,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      customerId: json['customer_id'] as String,
-      storeId: json['store_id'] as int,
-      addressId: json['address_id'] as int,
+      id: json['id'],
+      createdAt: DateTime.parse(json['created_at']),
+      customerId: json['customer_id'],
+      storeId: json['store_id'],
+      addressId: json['address_id'],
       subtotalPrice: (json['subtotal_price'] as num).toDouble(),
       deliveryFee: (json['delivery_fee'] as num).toDouble(),
       discountAmount: (json['discount_amount'] as num).toDouble(),
       totalPrice: (json['total_price'] as num).toDouble(),
-      status: _parseStatus(json['status'] as String),
-      notes: json['notes'] as String?,
-      items: itemsList,
-      address: address,
+      status: OrderStatus.values.firstWhere(
+        (e) => e.name == json['status'],
+        orElse: () => OrderStatus.pending,
+      ),
+      notes: json['notes'],
+      items: itemsList, 
+      store: storeModel, // <-- ** 4. این فیلد پاس داده شد **
     );
   }
+
+  // ... متد toJson() بدون تغییر باقی می‌ماند ...
 }

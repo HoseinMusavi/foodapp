@@ -3,14 +3,11 @@ import 'package:bloc/bloc.dart';
 import 'package:customer_app/core/error/failure.dart';
 import 'package:dartz/dartz.dart';
 import 'package:equatable/equatable.dart';
-// 1. --- حذف ایمپورت‌های geolocator و LatLng ---
-// import 'package:geolocator/geolocator.dart';
-// import '../../../../core/utils/lat_lng.dart';
-import '../../../../core/usecase/usecase.dart'; // NoParams را لازم داریم
+import '../../../../core/usecase/usecase.dart';
 import '../../../promotion/domain/entities/promotion_entity.dart';
 import '../../../promotion/domain/usecases/get_promotions_usecase.dart';
 import '../../domain/entities/store_entity.dart';
-import '../../domain/usecases/get_stores_usecase.dart'; // GetStoresUsecase را لازم داریم
+import '../../domain/usecases/get_stores_usecase.dart';
 
 part 'dashboard_state.dart';
 
@@ -23,66 +20,101 @@ class DashboardCubit extends Cubit<DashboardState> {
     required this.getPromotionsUsecase,
   }) : super(const DashboardState());
 
+  /// این تابع فقط داده‌های استاتیک صفحه (بنرها) را واکشی می‌کند
   Future<void> fetchDashboardData() async {
-    if (isClosed) return;
-    // حالت لودینگ را فقط اگر اولین بار است یا stores خالی است emit می‌کنیم
-    // تا در رفرش‌های بعدی، لیست قبلی نمایش داده شود
-    if (state.stores.isEmpty) {
-       emit(state.copyWith(status: DashboardStatus.loading));
-    } else {
-      // اگر لیست خالی نیست، فقط status را loading می‌کنیم تا RefreshIndicator کار کند
-      emit(state.copyWith(status: DashboardStatus.loading));
-    }
+    if (isClosed || state.promotionStatus == DataStatus.loading) return;
 
+    emit(state.copyWith(promotionStatus: DataStatus.loading));
 
-    // 2. --- دریافت موقعیت مکانی حذف شد ---
+    final promotionsResult = await getPromotionsUsecase(NoParams());
 
-    // دریافت همزمان داده‌ها با NoParams برای فروشگاه‌ها
-    final results = await Future.wait([
-      getPromotionsUsecase(NoParams()),
-      getStoresUsecase(NoParams()), // <-- 3. تغییر به NoParams
-    ]);
-
-    if (isClosed) return;
-
-    final promotionsResult =
-        results[0] as Either<Failure, List<PromotionEntity>>;
-    final storesResult = results[1] as Either<Failure, List<StoreEntity>>;
-
-    // بررسی خطاها
-    String? errorMessage;
-    if (promotionsResult.isLeft()) {
-       final failure = promotionsResult.swap().getOrElse(() => ServerFailure());
-       errorMessage = (failure is ServerFailure) ? failure.message : 'خطا در دریافت تبلیغات';
-    } else if (storesResult.isLeft()) {
-       final failure = storesResult.swap().getOrElse(() => ServerFailure());
-       errorMessage = (failure is ServerFailure) ? failure.message : 'خطا در دریافت فروشگاه‌ها';
-    }
-
-    if (errorMessage != null) {
-      if (!isClosed) {
-        emit(state.copyWith(status: DashboardStatus.failure, errorMessage: errorMessage));
-      }
-      return; // در صورت خطا، ادامه نده
-    }
-
-    // اگر هر دو موفق بودند
-    final promotions = promotionsResult.getOrElse(() => []);
-    final stores = storesResult.getOrElse(() => []);
-
-    if (!isClosed) {
-      emit(
-        state.copyWith(
-          status: DashboardStatus.success,
+    promotionsResult.fold(
+      (failure) {
+        if (isClosed) return;
+        emit(state.copyWith(
+          promotionStatus: DataStatus.failure,
+          errorMessage: _mapFailureToMessage(failure),
+        ));
+      },
+      (promotions) {
+        if (isClosed) return;
+        emit(state.copyWith(
+          promotionStatus: DataStatus.success,
           promotions: promotions,
-          stores: stores,
-          errorMessage: null, // خطای قبلی را پاک کن
-        ),
-      );
-    }
+        ));
+        // پس از بارگیری موفق بنرها، حالا فروشگاه‌ها را بارگیری کن
+        _fetchStores();
+      },
+    );
   }
 
-  void selectCategory(String categori) {}
+  /// این تابع فقط فروشگاه‌ها را بر اساس فیلترهای فعلی واکشی می‌کند
+  Future<void> _fetchStores() async {
+    if (isClosed) return;
 
-  // 4. --- تابع _getCurrentLocation کامل حذف شد ---
+    // وضعیت لودینگ را فقط برای فروشگاه‌ها تنظیم کن
+    emit(state.copyWith(
+      storeStatus: DataStatus.loading,
+      clearError: true, // پاک کردن خطای قبلی (اگر وجود داشت)
+    ));
+
+    // پارامترهای فیلتر را از state فعلی بخوان
+    final params = GetStoresParams(
+      searchQuery: state.searchQuery.isEmpty ? null : state.searchQuery,
+      category: state.selectedCategory.isEmpty || state.selectedCategory == 'همه'
+          ? null
+          : state.selectedCategory,
+    );
+
+    final storesResult = await getStoresUsecase(params);
+
+    storesResult.fold(
+      (failure) {
+        if (isClosed) return;
+        emit(state.copyWith(
+          storeStatus: DataStatus.failure,
+          errorMessage: _mapFailureToMessage(failure),
+        ));
+      },
+      (stores) {
+        if (isClosed) return;
+        emit(state.copyWith(
+          storeStatus: DataStatus.success,
+          stores: stores,
+        ));
+      },
+    );
+  }
+
+  // --- ۱. متد عمومی جدید برای فراخوانی از UI ---
+  /// این متد عمومی فقط فروشگاه‌ها را رفرش می‌کند (برای Pull-to-Refresh)
+  Future<void> refreshStores() async {
+    await _fetchStores();
+  }
+
+  /// این تابع فقط state را آپدیت و `_fetchStores` را فراخوانی می‌کند
+  void selectCategory(String category) {
+    if (isClosed) return;
+    final newCategory = (category == 'همه') ? '' : category;
+    
+    if (state.selectedCategory == newCategory) return;
+    
+    emit(state.copyWith(selectedCategory: newCategory));
+    _fetchStores(); // واکشی مجدد *فقط* فروشگاه‌ها
+  }
+
+  /// این تابع فقط state را آپدیت و `_fetchStores` را فراخوانی می‌کند
+  void searchStores(String query) {
+    if (isClosed) return;
+    
+    if (state.searchQuery == query) return;
+
+    emit(state.copyWith(searchQuery: query));
+    _fetchStores(); // واکشی مجدد *فقط* فروشگاه‌ها
+  }
+
+  // تابع کمکی
+  String _mapFailureToMessage(Failure failure) {
+    return (failure is ServerFailure) ? failure.message : 'خطای ناشناخته';
+  }
 }

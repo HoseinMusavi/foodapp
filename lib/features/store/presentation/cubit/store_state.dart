@@ -1,8 +1,5 @@
 // lib/features/store/presentation/cubit/store_state.dart
-
-// 1. "part of" را حذف کردیم
-import 'package:equatable/equatable.dart'; // 2. ایمپورت‌های مورد نیاز را اضافه کردیم
-import '../../domain/entities/store_entity.dart';
+part of 'store_cubit.dart'; // <-- ۱. این خط حیاتی اضافه یا اصلاح شد
 
 abstract class StoreState extends Equatable {
   const StoreState();
@@ -11,28 +8,22 @@ abstract class StoreState extends Equatable {
   List<Object> get props => [];
 }
 
-// وضعیت اولیه
-class StoreInitial extends StoreState {} // <-- این کلاس را اضافه کردیم
+// ۲. --- تعریف کلاس‌هایی که در ارورها ناشناخته بودند ---
 
-// وضعیت در حال بارگذاری
+class StoreInitial extends StoreState {}
+
 class StoreLoading extends StoreState {}
 
-// وضعیت موفقیت‌آمیز، همراه با لیستی از فروشگاه‌ها
 class StoreLoaded extends StoreState {
   final List<StoreEntity> stores;
-
-  const StoreLoaded({required this.stores}); // <-- از this.stores به required super.stores تغییر کرد
-
+  const StoreLoaded(this.stores);
   @override
   List<Object> get props => [stores];
 }
 
-// وضعیت خطا، همراه با یک پیام
 class StoreError extends StoreState {
   final String message;
-
-  const StoreError({required this.message}); // <-- از this.message به required super.message تغییر کرد
-
+  const StoreError(this.message);
   @override
   List<Object> get props => [message];
 }

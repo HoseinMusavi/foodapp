@@ -1,44 +1,35 @@
 // lib/features/store/presentation/cubit/store_cubit.dart
-import 'package:flutter_bloc/flutter_bloc.dart';
+
+import 'package:bloc/bloc.dart';
+import 'package:equatable/equatable.dart';
+
 import '../../../../core/error/failure.dart';
-import '../../../../core/usecase/usecase.dart'; // <-- NoParams را لازم داریم
-// --- حذف ایمپورت‌های geolocator و LatLng ---
+// ۱. --- ایمپورت GetStoresParams ---
 import '../../domain/usecases/get_stores_usecase.dart';
-import 'store_state.dart'; // <-- ایمپورت state
+import '../../domain/entities/store_entity.dart';
+
+part 'store_state.dart';
 
 class StoreCubit extends Cubit<StoreState> {
-  final GetStoresUsecase _getStoresUsecase;
+  final GetStoresUsecase getStoresUsecase;
 
-  StoreCubit({required GetStoresUsecase getStoresUsecase})
-      : _getStoresUsecase = getStoresUsecase,
-        super(StoreInitial());
+  StoreCubit({required this.getStoresUsecase}) : super(StoreInitial());
 
-  // نام متد fetchStores صحیح است
   Future<void> fetchStores() async {
-    if (isClosed) return;
     emit(StoreLoading());
 
-    // --- فراخوانی Usecase با NoParams ---
-    final failureOrStores = await _getStoresUsecase(NoParams()); // <-- اینجا باید NoParams باشد
+    // ۲. --- استفاده از GetStoresParams خالی (بدون فیلتر) ---
+    // این تابع RPC ما (get_filtered_stores) را با پارامترهای null فراخوانی می‌کند
+    // و در نتیجه همه‌ی فروشگاه‌ها را برمی‌گرداند.
+    final result = await getStoresUsecase(const GetStoresParams());
 
-    if (isClosed) return;
-
-    failureOrStores.fold(
+    result.fold(
       (failure) {
-        if (!isClosed) {
-          String message = 'خطا در دریافت فروشگاه‌ها';
-          if (failure is ServerFailure) {
-             message = failure.message;
-          }
-          emit(StoreError(message: message));
-        }
+        final message =
+            (failure is ServerFailure) ? failure.message : 'خطای ناشناخته';
+        emit(StoreError(message));
       },
-      (stores) {
-        if (!isClosed) {
-          emit(StoreLoaded(stores: stores));
-        }
-      },
+      (stores) => emit(StoreLoaded(stores)),
     );
   }
-  // --- تابع _getCurrentLocation حذف شده ---
 }

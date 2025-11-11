@@ -2,13 +2,14 @@
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/error/exceptions.dart';
-// 1. --- حذف ایمپورت LatLng ---
-// import '../../../../core/utils/lat_lng.dart';
 import '../models/store_model.dart';
 
 abstract class StoreRemoteDataSource {
-  // 2. --- تغییر نام متد و حذف پارامترها ---
-  Future<List<StoreModel>> getAllStores(); // قبلی: getStoresNearMe(LatLng location, double? radius);
+  // --- این متد باید اینجا تعریف شده باشد ---
+  Future<List<StoreModel>> getFilteredStores({
+    String? searchQuery,
+    String? category,
+  });
 }
 
 class StoreRemoteDataSourceImpl implements StoreRemoteDataSource {
@@ -16,23 +17,40 @@ class StoreRemoteDataSourceImpl implements StoreRemoteDataSource {
 
   StoreRemoteDataSourceImpl({required this.supabaseClient});
 
-  // 3. --- تغییر نام متد پیاده‌سازی و حذف پارامترها ---
+  // --- پیاده‌سازی متد جدید با فراخوانی RPC ---
   @override
-  Future<List<StoreModel>> getAllStores() async { // قبلی: getStoresNearMe(LatLng location, double? radius)
+  Future<List<StoreModel>> getFilteredStores({
+    String? searchQuery,
+    String? category,
+  }) async {
     try {
-      // استفاده از select ساده صحیح است
-      final response = await supabaseClient.from('stores').select();
+      // پارامترهایی که به تابع RPC ارسال می‌شوند
+      final params = {
+        'p_search_query': searchQuery,
+        'p_category': category,
+      };
 
-      final stores = (response as List)
-          .map((storeData) => StoreModel.fromJson(storeData))
-          .toList();
+      // فراخوانی تابع RPC
+      final response = await supabaseClient.rpc(
+        'get_filtered_stores',
+        params: params,
+      );
 
-      return stores;
+      if (response is List) {
+        final stores = response
+            .map((storeData) => StoreModel.fromJson(storeData))
+            .toList();
+        return stores;
+      }
+
+      return [];
     } catch (e) {
       if (e is PostgrestException) {
-        throw ServerException(message: e.message);
+        throw ServerException(
+            message: 'خطا در فیلتر کردن فروشگاه‌ها: ${e.message}');
       }
-      throw ServerException(message: 'Could not fetch stores: ${e.toString()}');
+      throw ServerException(
+          message: 'Could not fetch stores: ${e.toString()}');
     }
   }
 }

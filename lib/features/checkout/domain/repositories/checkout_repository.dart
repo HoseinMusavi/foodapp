@@ -1,13 +1,16 @@
-// lib/features/checkout/domain/repositories/checkout_repository.dart
-
+import 'package:customer_app/core/error/failure.dart';
+import 'package:customer_app/features/customer/domain/entities/address_entity.dart';
 import 'package:dartz/dartz.dart';
-import '../../../../core/error/failure.dart';
-import '../../../cart/domain/entities/cart_entity.dart';
-import '../entities/order_entity.dart';
 
+// Abstract class defining the contract for checkout operations
 abstract class CheckoutRepository {
-  /// یک سبد خرید را به عنوان ورودی می‌گیرد و سعی می‌کند سفارش را ثبت کند.
-  /// در صورت موفقیت، اطلاعات سفارش ثبت شده ([OrderEntity]) را برمی‌گرداند.
-  /// در صورت شکست، یک [Failure] برمی‌گرداند.
-  Future<Either<Failure, OrderEntity>> placeOrder(CartEntity cart);
+  /// Calls the 'place_order' function in Supabase.
+  ///
+  /// Takes the selected [address], optional [couponCode], and optional [notes].
+  /// Returns either a [Failure] or the new order ID (int).
+  Future<Either<Failure, int>> placeOrder({
+    required AddressEntity address,
+    String? couponCode,
+    String? notes,
+  });
 }
